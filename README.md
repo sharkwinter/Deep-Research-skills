@@ -113,15 +113,22 @@ config_file = "agents/web-researcher.toml"
 
 | Command (2.1.0+) | Description |
 |------------------|-------------|
-| `/research` | Generate research outline with items and fields |
+| `/research` | Two modes: **Table** (outline with items and fields) or **Deep-narrative** (angle-based subagents + saved primary sources + narrative report) |
 | `/research-add-items` | Add more research items to existing outline |
 | `/research-add-fields` | Add more field definitions to existing outline |
 | `/research-deep` | Deep research each item with parallel agents |
 | `/research-report` | Generate markdown report from JSON results |
 
+### Two research modes
+
+`/research` asks which mode fits before it starts:
+
+- **Table mode** (default) — the item x field workflow below (`outline.yaml` + `fields.yaml` -> `/research-deep` -> `/research-report`). Best for benchmarks, technology selection, competitor comparison.
+- **Deep-narrative mode** — splits the topic into 3-5 research *angles*, gives each its own subagent, **saves every primary source to `sources/`** with a per-angle manifest, self-verifies load-bearing facts, and writes a narrative `Deep_Research_Report.md` that cites the saved files. Best for tracing an evolution, telling approaches apart, or technical due diligence on an existing system. Discipline: `skills/research-*/research/deep_narrative_playbook.md`.
+
 ## Workflow & Example
 
-> **Example**: Researching "AI Agent Demo 2025"
+> **Example**: Researching "AI Agent Demo 2025" (Table mode)
 
 ### Phase 1: Generate Outline
 ```

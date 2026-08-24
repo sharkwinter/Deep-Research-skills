@@ -113,15 +113,22 @@ config_file = "agents/web-researcher.toml"
 
 | 命令 (2.1.0+) | 描述 |
 |---------------|------|
-| `/research` | 生成包含items和fields的调研outline |
+| `/research` | 两种模式：**表格模式**（生成含 items 和 fields 的 outline）或**深度叙事模式**（按角度分派子代理 + 一手资料落盘 + 叙事报告） |
 | `/research-add-items` | 向现有outline添加更多调研对象 |
 | `/research-add-fields` | 向现有outline添加更多字段定义 |
 | `/research-deep` | 使用并行agents对每个item进行深度调研 |
 | `/research-report` | 从JSON结果生成markdown报告 |
 
+### 两种调研模式
+
+`/research` 启动前会先询问采用哪种模式：
+
+- **表格模式**（默认）—— 即下方的 item × field 流程（`outline.yaml` + `fields.yaml` -> `/research-deep` -> `/research-report`）。适合 benchmark 调研、技术选型、竞品横评。
+- **深度叙事模式** —— 把话题拆成 3~5 个研究**角度**，每角度一个子代理，**把每份一手资料落盘到 `sources/`** 并写分角度清单，对承重事实二次核验，最终产出就地引用这些源文件的叙事报告 `深度调研报告.md`。适合梳理演进脉络、辨析路线区别、对已有系统做技术尽调。纪律见 `skills/research-*/research/deep_narrative_playbook.md`。
+
 ## 工作流 & 示例
 
-> **示例**：调研 "AI Agent Demo 2025"
+> **示例**：调研 "AI Agent Demo 2025"（表格模式）
 
 ### 阶段1：生成Outline
 ```
