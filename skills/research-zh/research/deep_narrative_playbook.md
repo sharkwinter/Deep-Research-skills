@@ -18,6 +18,7 @@
 > **你的角度**：<academic | 参考实现 | 标准 | 开源生态 | 批评/失败模式>
 > **要找**：<该角度的具体检索面：论文主题、候选产品官方文档、维护活跃仓库、实践讨论>
 > **若为开源生态角度**：**先按第三之二节做 GitHub API topic 枚举**，把用过的查询串一并回报；未经枚举**不得**下"该领域没有 X"这类判断。
+> **若为参考实现/标准角度（厂商文档）**：**先按第三之三节取导航树**，把「架构/概念」层级的页先读完再按关键词补细节；回报时列出你读过的架构页清单。
 > **落盘**（强制）：把每个采用的源存入 `<abs>/sources/`——
 >   - 网页：`doc_<slug>.md`，头部 `# 标题` / `Source URL:` / `Access date: <YYYY-MM-DD>`，正文放你实际用到的实质摘录（含仓库的星数/最近提交）；
 >   - PDF：`curl -L -o <abs>/sources/arxiv_<id>_<slug>.pdf <url>`，校验非零且以 `%PDF` 开头。
@@ -58,6 +59,40 @@ curl -s "https://api.github.com/repos/<owner>/<repo>"
 * 二手 listicle 只作线索，**每个候选都要回源调 API 核实**；"无法确认"之前先试一次 `/repos/<owner>/<repo>`。
 
 > **实证（2026-08）**：一次本体调研的开源角度用 web search + 一篇 listicle，结论写成"截至 2026-08 该细分领域无开源项目达到有意义的社区规模"。事后核查：`topic:ontology&sort=stars` **第一条**就是 `semantica-agi/semantica`（10,769★ / 1,173 fork / MIT / 当日仍有提交），其 README 首屏自称 "The Open Source Palantir for AI Agents"——因该短语只在 README 正文、description 里没有 "Palantir"，短语搜索与 web search 双双落空。同批漏掉的还有 `simplifaisoul/osiris`（7,925★）与 `trustgraph-ai/trustgraph`（topic:ontology 第 2 名）。**一条 API 查询即可避免。**
+
+## 三之三、厂商技术文档：**先枚举文档站结构，再按关键词搜**
+
+按功能关键词搜厂商文档，只会搜到**功能页**；**定义"这东西是什么"的架构页，关键词里往往一个字都不含**，
+因此永远搜不到。它们通常独立成区（`architecture-center` / `concepts` / `whitepaper` / `platform overview`），
+页数很少（个位数），但单页信息密度远高于功能页——**漏掉它们，等于只看见零件没看见图纸**。
+
+**顺序必须反过来：**
+
+```bash
+# ① 先取导航树 —— 最可靠的枚举面（每个文档页都内嵌整站导航）
+curl -sL -A "$UA" "<任一文档页>" | \
+  python3 -c "import sys,re,html; t=re.sub(r'<script.*?</script>','',sys.stdin.read(),flags=re.S); \
+              t=re.sub(r'<[^>]+>','\n',t); print(html.unescape(t))" | less
+#    从中挑出「架构 / 概念 / 平台总览」层级，通常 5~10 页
+
+# ② 这些架构页优先精读，再回头按功能关键词补细节
+```
+
+**不要指望 `sitemap.xml`**：它可能被**截断**、可能不含目标分区、可能按 locale 打散。用它前先数一数
+条目数是不是恰好一个整数上限（5000/10000 是常见截断值），并 grep 目标分区是否真的在里面。
+
+**判据**：写下"厂商 X 的架构是……"之前，先确认你**读过它自己标为"架构/概念"的那几页**。
+没读过就下架构结论，等于凭功能页倒推图纸。
+
+> **实证（2026-08）**：一次针对 Palantir 的调研做了**两轮**、抓了 17 页产品文档，
+> 全部按功能关键词命中（Functions / Automate / Action types / anti-patterns …），
+> 却**两轮都漏掉了 `architecture-center` 整个分区**——该区**总共只有 7 页**，
+> 其中《The Ontology system》一页含推翻性的定义级表述
+> （"The Ontology is not a 'semantic layer'"、Ontology 的 Language 包含 actions **与 automations**
+> 及定义其运作的 logic 本身），直接改写了此前的核心结论。
+> 它最终不是被搜到的，是核对第三方引语时**撞见**的。
+> 事后核查：`docs/sitemap.xml` 返回 200 但**截断在 5,000 条**、且不含 architecture-center，
+> 靠它同样会漏；**导航树一次就能列全那 7 页**。
 
 ## 四、核验，别轻信报告
 子代理完成后主控 `ls sources/`、查文件大小、抽查一份清单。"报告 15 个源、实际落 3 个"真实发生过。

@@ -18,6 +18,7 @@ Subagents do not share your context, so the brief must carry everything:
 > **Your angle**: <academic | reference implementations | standards | open-source landscape | criticism/failure modes>
 > **Find**: <the concrete search surface: paper topics, official docs of candidates, maintained repos, practitioner discussions>
 > **If this is the open-source angle**: **run the GitHub API topic enumeration in §2b first**, and report the query strings you used; without an enumeration you may **not** claim "no project in this field does X".
+> **If this angle reads a vendor's docs**: **pull the nav tree per §2c first**, read the architecture/concepts tier before any feature page, and list the architecture pages you read.
 > **Save** (mandatory) every source you rely on into `<abs>/sources/`:
 >   - web pages: `doc_<slug>.md` with a `# Title` / `Source URL:` / `Access date: <YYYY-MM-DD>` header and the substantive extract you actually used (include stars/last-commit for repos);
 >   - PDFs: `curl -L -o <abs>/sources/arxiv_<id>_<slug>.pdf <url>`, verified non-zero and starting with `%PDF`.
@@ -58,6 +59,43 @@ Only then use web search — for **narrative and critique**, never to **decide t
 * Treat second-hand listicles as leads only; **hit the API for every candidate**. Before writing "could not confirm", try `/repos/<owner>/<repo>` once.
 
 > **Field evidence (2026-08)**: an ontology study's open-source angle used web search plus one listicle and concluded "as of Aug 2026 no OSS project has reached meaningful community scale in this niche". Re-checked afterwards: `topic:ontology&sort=stars` returns `semantica-agi/semantica` as the **very first hit** (10,769 stars / 1,173 forks / MIT / committed that same day). Its README opens with "The Open Source Palantir for AI Agents" — but that phrase lives only in the README body and the description contains no "Palantir", so both phrase search and web search missed it. Also missed in the same pass: `simplifaisoul/osiris` (7,925 stars) and `trustgraph-ai/trustgraph` (#2 on topic:ontology). **One API query would have prevented this.**
+
+## 2c. Vendor technical docs: **enumerate the doc site's structure before keyword-searching it**
+
+Keyword-searching a vendor's docs finds **feature pages**. The pages that define *what the thing is*
+usually contain none of your keywords, so you will never find them that way. They tend to live in
+their own small section (`architecture-center` / `concepts` / `whitepaper` / `platform overview`) —
+a handful of pages, each far denser than any feature page. **Miss them and you have seen the parts
+but never the blueprint.**
+
+**Reverse the order:**
+
+```bash
+# 1. Pull the nav tree — the most reliable enumeration surface (every doc page embeds the whole nav)
+curl -sL -A "$UA" "<any docs page>" | \
+  python3 -c "import sys,re,html; t=re.sub(r'<script.*?</script>','',sys.stdin.read(),flags=re.S); \
+              t=re.sub(r'<[^>]+>','\n',t); print(html.unescape(t))" | less
+#    pick out the 'architecture / concepts / platform overview' tier — usually 5-10 pages
+
+# 2. Read those first. Only then go back to keyword search for feature detail.
+```
+
+**Do not rely on `sitemap.xml`**: it may be **truncated**, may omit the section you need, may be split
+by locale. Before trusting it, count the entries (a round number like 5000/10000 means truncation)
+and grep for the target section.
+
+**Test**: before writing "vendor X's architecture is …", confirm you have read the pages X itself
+labels *architecture* or *concepts*. Inferring the blueprint from feature pages is not the same thing.
+
+> **Field evidence (2026-08)**: a Palantir study ran **two rounds** and captured 17 product-doc pages,
+> all found by feature keywords (Functions / Automate / Action types / anti-patterns …) — and **both
+> rounds missed the entire `architecture-center` section**, which contains **just 7 pages**. One of
+> them, *The Ontology system*, carries definition-level statements that overturned the study's core
+> conclusion ("The Ontology is not a 'semantic layer'"; the Ontology's Language includes actions **and
+> automations** and the literal logic defining how those actions operate). It was never found by
+> search — it was stumbled upon while verifying a third party's quotation. Checked afterwards:
+> `docs/sitemap.xml` returns 200 but is **truncated at 5,000 entries** and omits architecture-center
+> entirely; **the nav tree listed all 7 pages in one shot.**
 
 ## 4. Verify, don't trust the report
 When a subagent finishes: `ls sources/`, check file sizes, open one manifest. "Reported 15 sources, saved 3" really happens.
