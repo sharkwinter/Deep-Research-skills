@@ -7,7 +7,7 @@
 1. **学术/理论** —— 近年论文实际达到什么、基准是什么（arXiv/Scholar）。
 2. **产业/参考实现** —— 谁在生产环境部署过、报告了什么。
 3. **标准/规范** —— 相关标准编号、版本、采标关系。
-4. **工程/开源生态** —— 哪些维护活跃的组件已实现大半（GitHub：星数+最近提交）。
+4. **工程/开源生态** —— 哪些维护活跃的组件已实现大半（GitHub：星数+最近提交）。**此角度必须先做 API 普查，见第九节。**
 5. **失败模式/批评** —— 实践者报告的坑（论坛/issue/复盘/第三方批评）。
 
 坏角度："该用什么模型？"（由平台/前提决定，非调研）。好角度："X 在 Y 基准上达到多少，残余误差怎么处理？"
@@ -17,6 +17,7 @@
 > **调研总目标**：<一句话，含最终报告要回答什么>
 > **你的角度**：<academic | 参考实现 | 标准 | 开源生态 | 批评/失败模式>
 > **要找**：<该角度的具体检索面：论文主题、候选产品官方文档、维护活跃仓库、实践讨论>
+> **若为开源生态角度**：**先按第三之二节做 GitHub API topic 枚举**，把用过的查询串一并回报；未经枚举**不得**下"该领域没有 X"这类判断。
 > **落盘**（强制）：把每个采用的源存入 `<abs>/sources/`——
 >   - 网页：`doc_<slug>.md`，头部 `# 标题` / `Source URL:` / `Access date: <YYYY-MM-DD>`，正文放你实际用到的实质摘录（含仓库的星数/最近提交）；
 >   - PDF：`curl -L -o <abs>/sources/arxiv_<id>_<slug>.pdf <url>`，校验非零且以 `%PDF` 开头。
@@ -26,11 +27,76 @@
 ## 三、落盘文件命名（编码来源）
 `doc_<slug>.md`（网页）、`arxiv_<id>_<slug>.pdf`、`github_<repo>.md`、`case_<org>.md`、`discussion_<topic>.md`、`local_<repo>.md`（主控对本地仓的一手勘察）。每篇网页保留 URL + 访问日期（无日期的摘录一个月后无法复核）。
 
+## 三之二、开源图景：先 API 普查，再精读（**负面全称判断的唯一合法来源**）
+
+**只用 web search 做开源图景，会系统性漏掉该领域的头名。** 两个机制：
+
+1. GitHub 仓库搜索默认只索引 **name / description / topics**，**不索引 README 正文**（要 `in:readme` 才搜）。项目常把定位口号写在 README 里，description 写技术性描述。
+2. "X alternative" 这类词的 SEO 被 listicle 和专门蹭该短语的小项目占满；真正的头名不必蹭。
+
+**因此本角度的第一步必须是枚举，不是抽样：**
+
+```bash
+# ① 按能力 topic 枚举（写能力，不要写厂商名），2~4 个 topic 各跑一次
+curl -s -G "https://api.github.com/search/repositories" \
+  --data-urlencode 'q=topic:<topic> pushed:>YYYY-MM-DD' \
+  --data 'sort=stars&order=desc&per_page=20'
+
+# ② 营销短语补一次 README 正文搜索
+curl -s -G "https://api.github.com/search/repositories" \
+  --data-urlencode 'q="<定位短语>" in:readme' --data 'sort=stars&per_page=10'
+
+# ③ 命中后取真实指标（星/叉/许可证/创建与最近推送/topics）
+curl -s "https://api.github.com/repos/<owner>/<repo>"
+```
+
+之后才是 web search —— 它用来读**叙事与批评**，不用来**确定名单**。
+
+**纪律：**
+* **负面全称判断**（"没有项目达到规模"、"该领域无成熟实现"）**只能**由枚举查询支撑，**不得**由 web search 得出。
+* **把查询串本身写进 `SOURCES-*.md`**。一条图景结论的可信度，等于支撑它的那条查询的覆盖面——读者要能重跑。
+* 二手 listicle 只作线索，**每个候选都要回源调 API 核实**；"无法确认"之前先试一次 `/repos/<owner>/<repo>`。
+
+> **实证（2026-08）**：一次本体调研的开源角度用 web search + 一篇 listicle，结论写成"截至 2026-08 该细分领域无开源项目达到有意义的社区规模"。事后核查：`topic:ontology&sort=stars` **第一条**就是 `semantica-agi/semantica`（10,769★ / 1,173 fork / MIT / 当日仍有提交），其 README 首屏自称 "The Open Source Palantir for AI Agents"——因该短语只在 README 正文、description 里没有 "Palantir"，短语搜索与 web search 双双落空。同批漏掉的还有 `simplifaisoul/osiris`（7,925★）与 `trustgraph-ai/trustgraph`（topic:ontology 第 2 名）。**一条 API 查询即可避免。**
+
 ## 四、核验，别轻信报告
 子代理完成后主控 `ls sources/`、查文件大小、抽查一份清单。"报告 15 个源、实际落 3 个"真实发生过。
 
 ## 五、载重事实主控自校
 成为结论承诺的关键事实——许可证、版本号、性能/显存数字、标准编号、API 能力、监管要求——在主控侧用一次定向检索二次核验；无法核验的在报告里标"待验"，不要写成既定假设。
+
+## 五之二、引文纪律：**抽取层干净 ≠ 综合层干净**
+
+落盘的 `sources/` 可以逐字无误，而报告里照样出现**页面上根本不存在的"引语"**。机制是**压缩**：
+主控为了让论断更利落，把两句话并成一句、把摘要写成引语、把两条不同的轴压成一条——
+一加引号，推论就伪装成了证据。抓取工具的摘要模型也会这样改写（它的输出**不是**原文）。
+
+**三条规则：**
+
+1. **引号内必须可回源。** 报告里每一段引语，都要能在 `sources/` 里逐字找到。找不到 → 要么补落盘，要么摘掉引号。
+2. **推论就写成推论。** 你的概括、你的判断、你给的定性，**不加引号**，并显式说明是本方推论。
+   尤其当来源支持"X **可以** 是 Y"而你要写"X **必须** 是 Y"时，必须写明这个 MUST 是**本方的收紧决定**及其理由。
+3. **警惕压缩式造句。** 合并两句、跨节拼接、把否定式改写成肯定式——这三种操作后若还留着引号，八成已经造假。
+   两条不同的轴（如"归属"与"落位"）压成一句，是最常见的翻车方式。
+
+**交付前跑一次机械检查**（`quotecheck.py` 随本 skill 分发）：
+
+```bash
+python3 quotecheck.py <报告.md> <sources 目录>
+# 抽出报告中所有英文引语，逐条回 sources/ 比对；未回源的逐条列出，非零退出
+```
+
+它会剥掉 markdown 强调、行首 `>` 引用标记与内嵌引号后再比对——引文常跨行、常嵌套，
+不做归一化会满屏误报。**报告里避免用中文直引号包裹含英文引语的整句**（嵌套引号会切碎跨度）；
+中文转述用「」，英文原文用 `"`。
+
+> **实证（2026-08）**：一份已交付的调研报告，`sources/` 19 份抽取逐字无误，但机械检查出
+> **两条页面上不存在的"引语"**——都是压缩产物：一条把 Golden Hammer 的选型表压成
+> "Match tool to job — ..."；一条把 Action Sprawl 的两句原文
+> （"Design action types around business operations, **not database updates**. Create actions that
+> bundle related changes into meaningful workflows."）并写成一句。
+> 同时查出第三类问题：**引文是真的、却从没落进 `sources/`**（从临时 curl 缓冲里引的）——
+> 一个月后无从复核，等同于没有证据。三类全部由这一条命令暴露。
 
 ## 六、成本分层
 抓取/落盘/写清单 → 子代理（可 haiku）；需高质量摘要/结论的角度 → 子代理 sonnet；跨角度综合与成文 → 主模型。
