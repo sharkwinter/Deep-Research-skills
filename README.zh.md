@@ -1,4 +1,4 @@
-# Deep Research Skill for Claude Code / OpenCode / Codex
+# Deep Research Skill for Claude Code / OpenCode / Codex / DeepSeek Harness
 
 [English](README.md) | [中文](README.zh.md)
 
@@ -6,7 +6,7 @@
 
 > 灵感来源：[RhinoInsight: Improving Deep Research through Control Mechanisms for Model Behavior and Context](https://arxiv.org/abs/2511.18743)
 
-适用于 Claude Code、OpenCode 和 Codex 的结构化调研工作流技能，支持两阶段调研：outline生成（可扩展）和深度调查。人在回路设计确保每个阶段的精确控制。
+适用于 Claude Code、OpenCode、Codex 和 DeepSeek Harness（DSH）的结构化调研工作流技能，支持两阶段调研：outline生成（可扩展）和深度调查。人在回路设计确保每个阶段的精确控制。
 
 ![Deep Research Skills 工作流](workflow.png)
 
@@ -103,6 +103,24 @@ description = "Use this agent when you need to research information on the inter
 config_file = "agents/web-researcher.toml"
 ```
 
+### DeepSeek Harness (DSH)
+```bash
+# 中文版（当前唯一的 DSH 变体）
+bash scripts/install-dsh.sh zh
+```
+
+安装到 `$DSH_HOME`（默认 `~/.dsh`）：
+- Skills → `~/.dsh/skills/`（`research`、`research-add-items`、`research-add-fields`、`research-deep`、`research-report`）
+- web-search 子代理人设 + 策略模块 → `~/.dsh/agents/`（`web-search-agent.md`、`web-search-modules/`）
+
+平台差异说明：
+- DSH 没有 Claude Code 式的命名 agent 注册表：research skills 会自行读取 `~/.dsh/agents/web-search-agent.md`，把全文内联为每个 `subagent` prompt 的 preamble。
+- 联网检索使用 DSH 内置的 `web_search` 工具——无需 `OPENCODE_ENABLE_EXA` 等环境变量。
+- 安装脚本会把已安装文件中的 `~/.dsh` 字面量改写为 `$DSH_HOME` 的绝对路径，因为 DSH 的 `read` 工具不展开 `~`。
+- 必需：`pip install pyyaml`（安装脚本会检查）。
+
+DSH 会监听 skill 根目录，正在运行的会话无需重启即可发现新装的 skills。
+
 ## 命令
 
 > **Claude Code 2.1.0+**：现已支持直接 `/skill-name` 触发！
@@ -110,6 +128,8 @@ config_file = "agents/web-researcher.toml"
 > **旧版本**：请使用 `run /skill-name` 格式。
 >
 > **Codex**：可以通过 `/skills` -> `List Skills` 选择这些 skills，也可以用自然语言触发，例如 `Use the research skill to build an outline for AI Agent Demo 2025`。
+>
+> **DSH**：在 Web GUI 输入框直接输入 `/skill-name` 即可触发（输入 `/` 会弹出用户可调用 skills 列表，手打 `/research` 效果相同）。
 
 | 命令 (2.1.0+) | 描述 |
 |---------------|------|

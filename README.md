@@ -1,4 +1,4 @@
-# Deep Research Skill for Claude Code / OpenCode / Codex
+# Deep Research Skill for Claude Code / OpenCode / Codex / DeepSeek Harness
 
 [English](README.md) | [中文](README.zh.md)
 
@@ -6,7 +6,7 @@
 
 > Inspired by [RhinoInsight: Improving Deep Research through Control Mechanisms for Model Behavior and Context](https://arxiv.org/abs/2511.18743)
 
-A structured research workflow skill for Claude Code, OpenCode, and Codex, supporting two-phase research: outline generation (extensible) and deep investigation. Human-in-the-loop design ensures precise control at every stage.
+A structured research workflow skill for Claude Code, OpenCode, Codex, and DeepSeek Harness, supporting two-phase research: outline generation (extensible) and deep investigation. Human-in-the-loop design ensures precise control at every stage.
 
 ![Deep Research Skills Workflow](workflow.png)
 
@@ -103,6 +103,24 @@ description = "Use this agent when you need to research information on the inter
 config_file = "agents/web-researcher.toml"
 ```
 
+### DeepSeek Harness (DSH)
+```bash
+# Chinese version (currently the only DSH variant)
+bash scripts/install-dsh.sh zh
+```
+
+Installs into `$DSH_HOME` (default `~/.dsh`):
+- Skills → `~/.dsh/skills/` (`research`, `research-add-items`, `research-add-fields`, `research-deep`, `research-report`)
+- Web-search subagent persona + strategy modules → `~/.dsh/agents/` (`web-search-agent.md`, `web-search-modules/`)
+
+Platform notes:
+- DSH has no named-agent registry: the research skills read `~/.dsh/agents/web-search-agent.md` themselves and inline its full text as the preamble of every `subagent` prompt.
+- Web search uses DSH's built-in `web_search` tool — no `OPENCODE_ENABLE_EXA` or other env vars needed.
+- The installer rewrites `~/.dsh` literals in the installed files to the absolute `$DSH_HOME` path, because DSH's `read` tool does not expand `~`.
+- Required: `pip install pyyaml` (the installer checks it).
+
+DSH watches the skill roots, so running sessions pick the skills up without a restart.
+
 ## Commands
 
 > **Claude Code 2.1.0+**: Direct `/skill-name` trigger is now supported!
@@ -110,6 +128,8 @@ config_file = "agents/web-researcher.toml"
 > **Older versions**: Use `run /skill-name` format instead.
 >
 > **Codex**: You can trigger these skills from `/skills` -> `List Skills`, or ask naturally, for example `Use the research skill to build an outline for AI Agent Demo 2025`.
+>
+> **DSH**: `/skill-name` works directly in the Web GUI input box (the `/` menu lists user-invocable skills; a hand-typed token works the same).
 
 | Command (2.1.0+) | Description |
 |------------------|-------------|
