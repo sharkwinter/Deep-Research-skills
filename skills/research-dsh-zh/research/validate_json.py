@@ -19,7 +19,7 @@ CATEGORY_MAPPING = {
     "市场定位": ["market_positioning", "market", "市场定位"],
 }
 
-_SKIP_KEYS = {"_source_file", "uncertain"}
+_SKIP_KEYS = {"_source_file", "uncertain", "sources", "pending_research"}
 
 
 def load_fields_yaml(fields_path):

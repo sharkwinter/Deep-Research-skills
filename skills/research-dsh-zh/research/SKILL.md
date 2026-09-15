@@ -147,6 +147,7 @@ prompt = f"""## 任务
   - batch_size: 并行agent数量（需用 `ask_user_question` 工具确认）
   - items_per_agent: 每个agent调研项目数（需用 `ask_user_question` 工具确认）
   - output_dir: 结果输出目录（默认./results）
+  - report_skeleton: 报告骨架文件路径（可选；指向章节式提纲md，供 /research-report 骨架模式使用）
 
 **fields.yaml**（字段定义）：
 - 字段分类和定义
