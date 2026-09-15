@@ -55,7 +55,7 @@ description: 对目标话题进行初步调研。支持两种模式——表格�
 **硬约束**：以下prompt必须严格复述，仅替换{xxx}中的变量，禁止改写结构或措辞。
 
 **子代理启动方式（DSH）**：
-1. 用 `read` 工具读取 `~/.dsh/agents/web-search-agent.md` 全文，作为子代理 prompt 的 preamble（web-search 研究员人设与策略模块加载纪律）；
+1. 用 `read` 工具读取 `/root/.dsh/agents/web-search-agent.md` 全文，作为子代理 prompt 的 preamble（web-search 研究员人设与策略模块加载纪律）；
 2. 子代理完整 prompt = preamble + 空行 + 下方模板渲染结果（仅替换变量，不改结构）；
 3. 用 `subagent` 工具启动（`run_in_background: true`），description 填 `web-search: {topic}`。
 
@@ -184,7 +184,7 @@ prompt = f"""## 任务
 从话题本身拆 3~5 个**研究角度**（不是 item），每个角度可被证据回答、且能改变结论。常见角度：学术/理论、产业/参考实现、标准/规范、工程/开源生态、失败模式/批评。用 `ask_user_question` 工具与用户确认角度集与时间范围。
 
 ### Step B3: 每角度一个子代理（一手落盘）
-每个角度通过 `subagent` 工具启动 1 个子代理（后台运行；DSH 子代理沿用会话默认模型）。子代理 prompt 以 `~/.dsh/agents/web-search-agent.md` 全文为 preamble（保证检索纪律与策略模块加载），后接自包含 brief。每个子代理的 brief **必须自包含**（不共享主控上下文），并强制：
+每个角度通过 `subagent` 工具启动 1 个子代理（后台运行；DSH 子代理沿用会话默认模型）。子代理 prompt 以 `/root/.dsh/agents/web-search-agent.md` 全文为 preamble（保证检索纪律与策略模块加载），后接自包含 brief。每个子代理的 brief **必须自包含**（不共享主控上下文），并强制：
 - 用 `web_search` 工具检索、`bash`+`curl` 抓取权威一手源（规范/论文/官方文档/维护活跃的仓库）；
 - **把每个采用的源落盘**到 `{topic_slug}/sources/`：网页存 `doc_<slug>.md`（含 `# 标题` / `Source URL:` / `Access date:` 头 + 实质摘录）；PDF 用 `curl -L -o {abs}/sources/arxiv_<id>_<slug>.pdf <url>` 并校验非零且以 `%PDF` 开头；
 - 写 `{topic_slug}/sources/SOURCES-<angle>.md` 清单表：本地文件名｜标题｜作者年｜URL｜一句话相关性；

@@ -17,7 +17,7 @@ description: 向现有调研outline补充字段定义。
 ### Step 2: 获取补充来源
 用 `ask_user_question` 工具询问用户选择：
 - **A. 用户直接输入**：用户提供字段名称和描述
-- **B. Web Search搜索**：启动 web-search 子代理搜索该领域常用字段（启动方式同 `/research`：用 `read` 工具读取 `~/.dsh/agents/web-search-agent.md` 全文作为子代理 prompt preamble，`subagent` 工具后台启动）
+- **B. Web Search搜索**：启动 web-search 子代理搜索该领域常用字段（启动方式同 `/research`：用 `read` 工具读取 `/root/.dsh/agents/web-search-agent.md` 全文作为子代理 prompt preamble，`subagent` 工具后台启动）
 
 ### Step 3: 展示并确认
 - 展示建议的新字段列表

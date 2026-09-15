@@ -17,7 +17,7 @@ description: 向现有调研outline补充items（调研对象）。
 ### Step 2: 并行获取补充来源
 同时进行：
 - **A. 询问用户**：用 `ask_user_question` 工具询问需要补充哪些items？有具体名称吗？
-- **B. 询问是否需要Web Search**：是否启动 web-search 子代理搜索更多items？（启动方式同 `/research`：用 `read` 工具读取 `~/.dsh/agents/web-search-agent.md` 全文作为子代理 prompt preamble，`subagent` 工具后台启动）
+- **B. 询问是否需要Web Search**：是否启动 web-search 子代理搜索更多items？（启动方式同 `/research`：用 `read` 工具读取 `/root/.dsh/agents/web-search-agent.md` 全文作为子代理 prompt preamble，`subagent` 工具后台启动）
 
 ### Step 3: 合并更新
 - 将新items追加到outline.yaml

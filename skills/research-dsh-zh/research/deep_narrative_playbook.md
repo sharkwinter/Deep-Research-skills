@@ -13,7 +13,7 @@
 坏角度："该用什么模型？"（由平台/前提决定，非调研）。好角度："X 在 Y 基准上达到多少，残余误差怎么处理？"
 
 ## 二、子代理 brief（每角度一个，自包含）
-子代理不共享主控上下文（DSH 中通过 `subagent` 工具启动，prompt 以 `~/.dsh/agents/web-search-agent.md` 全文为 preamble），brief 必须自带：
+子代理不共享主控上下文（DSH 中通过 `subagent` 工具启动，prompt 以 `/root/.dsh/agents/web-search-agent.md` 全文为 preamble），brief 必须自带：
 > **调研总目标**：<一句话，含最终报告要回答什么>
 > **你的角度**：<academic | 参考实现 | 标准 | 开源生态 | 批评/失败模式>
 > **要找**：<该角度的具体检索面：论文主题、候选产品官方文档、维护活跃仓库、实践讨论>
@@ -117,7 +117,7 @@ curl -sL -A "$UA" "<任一文档页>" | \
 **交付前跑一次机械检查**（`quotecheck.py` 随本 skill 分发）：
 
 ```bash
-python3 ~/.dsh/skills/research/quotecheck.py <报告.md> <sources 目录>
+python3 /root/.dsh/skills/research/quotecheck.py <报告.md> <sources 目录>
 # 抽出报告中所有英文引语，逐条回 sources/ 比对；未回源的逐条列出，非零退出
 ```
 

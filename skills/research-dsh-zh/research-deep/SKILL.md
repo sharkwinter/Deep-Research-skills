@@ -24,7 +24,7 @@ description: 读取调研outline，为每个item启动独立子代理进行深�
 - 通过 `subagent` 工具后台并行启动 web-search 子代理（`run_in_background: true`；子代理文本回复无需收集，结果由输出文件承载）
 
 **子代理启动方式（DSH）**：
-1. 用 `read` 工具读取 `~/.dsh/agents/web-search-agent.md` 全文，作为子代理 prompt 的 preamble（web-search 研究员人设与策略模块加载纪律）；
+1. 用 `read` 工具读取 `/root/.dsh/agents/web-search-agent.md` 全文，作为子代理 prompt 的 preamble（web-search 研究员人设与策略模块加载纪律）；
 2. 子代理完整 prompt = preamble + 空行 + 下方 Prompt 模板渲染结果（仅替换变量，不改结构）；
 3. 用 `subagent` 工具启动（`run_in_background: true`），description 填 `research-deep: {item_name}`。
 
@@ -57,7 +57,7 @@ prompt = f"""## 任务
 
 ## 验证
 完成JSON输出后，运行验证脚本确保字段完整覆盖：
-python3 ~/.dsh/skills/research/validate_json.py -f {fields_path} -j {output_path}
+python3 /root/.dsh/skills/research/validate_json.py -f {fields_path} -j {output_path}
 验证通过后才算完成任务。
 """
 ```
@@ -83,7 +83,7 @@ description: Microsoft/GitHub开发，首个主流AI编程助手，市场份额�
 
 ## 验证
 完成JSON输出后，运行验证脚本确保字段完整覆盖：
-python3 ~/.dsh/skills/research/validate_json.py -f {project_dir}/fields.yaml -j {project_dir}/results/GitHub_Copilot.json
+python3 /root/.dsh/skills/research/validate_json.py -f {project_dir}/fields.yaml -j {project_dir}/results/GitHub_Copilot.json
 验证通过后才算完成任务。
 ```
 
