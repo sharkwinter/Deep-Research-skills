@@ -90,7 +90,7 @@ if [ "$LINK_MODE" -eq 1 ]; then
   rewrite_tilde "$SKILLS_SRC" "$AGENTS_SRC"
 
   # 1. Skills: symlink each skill dir to the repo
-  for d in research research-add-items research-add-fields research-deep research-report; do
+  for d in research research-add-items research-add-fields research-deep research-report docx-report; do
     rm -rf "$DSH_HOME/skills/$d"
     ln -s "$SKILLS_SRC/$d" "$DSH_HOME/skills/$d"
   done
