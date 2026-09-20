@@ -89,6 +89,16 @@ def shade_cell(cell, fill="DCE6F1"):
     tcPr.append(shd)
 
 
+def shade_run(run, fill="EDEDED"):
+    """给文字（run）加浅底纹，用于高亮【推算】【冲突】等证据标记。"""
+    rPr = run._element.get_or_add_rPr()
+    shd = OxmlElement('w:shd')
+    shd.set(qn('w:val'), 'clear')
+    shd.set(qn('w:color'), 'auto')
+    shd.set(qn('w:fill'), fill)
+    rPr.append(shd)
+
+
 def add_bookmark(paragraph, name, bid):
     start = OxmlElement('w:bookmarkStart')
     start.set(qn('w:id'), str(bid))
@@ -146,7 +156,9 @@ def add_citation(paragraph, nums, size=BODY_SZ):
 # inline parsing: **bold**, `code`, [[cite]]
 # --------------------------------------------------------------------------
 CITE_RE = re.compile(r'\[\[([0-9,\s]+)\]\]')
-INLINE_RE = re.compile(r'(\*\*.+?\*\*|`[^`]+`|\[\[[0-9,\s]+\]\])')
+# 证据标记：由转换器加浅底纹高亮，便于读者与脚本同时定位（R6.1/R6.3）
+FLAG_RE = re.compile(r'【(?:推算|估算|冲突|未取得|负面发现|口径冲突)】')
+INLINE_RE = re.compile(r'(\*\*.+?\*\*|`[^`]+`|\[\[[0-9,\s]+\]\]|【(?:推算|估算|冲突|未取得|负面发现|口径冲突)】)')
 
 
 def add_inline(paragraph, text, size=BODY_SZ, base_bold=False, allow_cite=True,
@@ -161,6 +173,10 @@ def add_inline(paragraph, text, size=BODY_SZ, base_bold=False, allow_cite=True,
             if not nums:
                 continue
             add_citation(paragraph, nums, size=size if cite_size is None else cite_size)
+        elif FLAG_RE.fullmatch(part):
+            r = paragraph.add_run(part)
+            set_run_font(r, size=size, bold=True)
+            shade_run(r)
         elif part.startswith('**') and part.endswith('**') and len(part) > 4:
             r = paragraph.add_run(part[2:-2])
             set_run_font(r, size=size, bold=True)
