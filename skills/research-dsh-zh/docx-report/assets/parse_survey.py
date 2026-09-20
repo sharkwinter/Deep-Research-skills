@@ -103,6 +103,8 @@ def load_responses(path, defs):
     recs = []
     for r in rows:
         recs.append({
+            'row': len(recs) + 1,                    # CSV 内行序（记录号），供逐值精确引用
+            'created_at': g(r, 'created_at') or r.get('created_at', ''),
             'name': g(r, 'q1') or '(未具名)',
             'finished': g(r, 'finished') == 'True' or r.get('finished') == 'True',
             'q4_raw': g(r, 'q4'),
@@ -247,6 +249,11 @@ def main():
             continue
         r['q4'] = v
         r['q4_status'] = status
+        # R10：算力指标必须"逐值精确引用"——引用串定位到记录号/企业/题号/抓取时间
+        r['cite'] = ('问卷 q4（记录 #%d｜%s｜%s｜created_at %s）'
+                     % (r['row'], r['name'],
+                        'finished=True' if r['finished'] else 'finished=False',
+                        (r['created_at'] or '')[:19]))
         r['bucket'] = next((v2 for k, v2 in SOURCE_MAP.items() if k in r['q5']), '未判定')
         r['cards'], r['implied_p'], r['all_known'] = cross_check(r['q6_detail'])
         answered.append(r)
@@ -278,8 +285,8 @@ def main():
              '不是缺答。\n' % (len(answered) - sum(1 for r in finished if 'q4' in r)))
 
     L.append('\n## 二、逐企业当前算力（q4 + q5 + q6 交叉校验）\n')
-    L.append('| 企业 | 完整 | q4 在用算力 (P@FP16) | q5 来源 | 口径分桶 | q6 硬件明细 | 硬件推算 | 校验 |')
-    L.append('|---|---|---|---|---|---|---|---|')
+    L.append('| 企业 | 完整 | q4 在用算力 (P@FP16) | q5 来源 | 口径分桶 | q6 硬件明细 | 硬件推算 | 校验 | **R10 精确引用串（逐值）** |')
+    L.append('|---|---|---|---|---|---|---|---|---|')
     for r in answered:
         chk = '—'
         if r['implied_p'] is not None:
@@ -292,11 +299,11 @@ def main():
                 chk = '✅ 自洽（%.2f×）' % ratio
             else:
                 chk = '⚠️ 偏差 %.2f×' % ratio
-        L.append('| %s | %s | **%s** | %s | %s | %s | %s | %s |' % (
+        L.append('| %s | %s | **%s** | %s | %s | %s | %s | %s | `%s` |' % (
             r['name'], 'Y' if r['finished'] else '',
             ('%g' % r['q4']) + ('（0＝无）' if r['q4'] == 0 else ''),
             r['q5'] or '—', r['bucket'], r['q6_detail'] or '—',
-            ('%.1f P' % r['implied_p']) if r['implied_p'] is not None else '—', chk))
+            ('%.1f P' % r['implied_p']) if r['implied_p'] is not None else '—', chk, r['cite']))
 
     grp = defaultdict(lambda: [0.0, 0])
     for r in answered:
@@ -330,7 +337,27 @@ def main():
     L.append('| 高校与科研 | 高校调研报告（另行并入） | **待填** | 必须并入，并按同一 A100 等效口径折算 |')
     L.append('| 政务/社会资本 | 政府云、CTM AI Hub 等 | **待填**（多未公开） | 未公开者记为负面发现，不得静默省略 |')
 
-    L.append('\n## 五、必答题目清单（可直接引用的"仪器约束"）\n')
+    L.append('\n## 五、R10 算力指标精确引用规格（正文必须照此写）\n')
+    L.append('> 规则：**算力指标一律逐值引用，角标贴在数值本身**（不是整行的"来源"列、'
+             '不是段末），且引用条目必须能唯一定位到"哪份文件的哪一处"。\n')
+    L.append('| 报告位置 | 数值 | 必须写成的精确引用 |')
+    L.append('|---|---|---|')
+    L.append('| 现状·企业当前算力 | 各企业 q4 | `问卷 q4（记录 #N｜<企业>｜finished=…｜created_at …）` → 见下表逐条 |')
+    L.append('| 现状·企业当前算力（合计） | Σ=%.0f P@FP16 ≈%.0f 张 A100 等效 | 上列各记录号之和；折算基准须同时引用（1×A100=%.3f P@FP16） |'
+             % (tot, tot / a100, a100))
+    L.append('| 现状·企业本地装机 | %.0f P（下界 %.0f P） | 按 q5 分桶后求和，逐条引用同上 |'
+             % (loc, grp['A-本地装机'][0]))
+    L.append('| 现状·高校装机 | 待填 | **不得只引"高校调研报告"整体条目**；须引到该报告的具体表格/单位，'
+             '并注明"卡数→A100 等效"的折算来源 |')
+    L.append('| 现状·政务/社会资本 | 待填 | 判给类引**判给公告/批准文件号**；企业类引财报页码或官网 URL＋抓取日期 |')
+    L.append('| 硬件折算基准 | 单卡/整机 FP16 | 每条基准值各自引用；未取得来源的基准标 `【未取得】`，不得默默使用 |')
+    L.append('\n### 逐条精确引用串（可直接粘贴进报告脚注/参考文献）\n')
+    L.append('```')
+    for r in answered:
+        L.append('%s → %g P@FP16' % (r['cite'], r['q4']))
+    L.append('```')
+
+    L.append('\n## 六、必答题目清单（可直接引用的"仪器约束"）\n')
     L.append('以下题目 `required=true`：完整提交中**必然有答案**，'
              '因此不得把相应字段写成"无回复"。\n')
     L.append('| id | 题干 | 类型 |')
