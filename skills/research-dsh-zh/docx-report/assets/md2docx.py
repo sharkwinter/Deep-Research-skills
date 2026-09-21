@@ -22,11 +22,12 @@ md2docx.py — 将结构化的中文 Markdown 调研报告转换为与模板
 """
 
 import sys
+import os
 import re
 import argparse
 
 from docx import Document
-from docx.shared import Pt, Twips, RGBColor
+from docx.shared import Pt, Twips, RGBColor, Cm
 from docx.enum.text import WD_ALIGN_PARAGRAPH, WD_BREAK
 from docx.enum.table import WD_TABLE_ALIGNMENT
 from docx.oxml.ns import qn
@@ -50,14 +51,14 @@ PROFILES = {
         BODY_SZ=11, H1_SZ=16, H2_SZ=12.5, H3_SZ=11.5, TITLE_SZ=22, TOC_SZ=16,
         LINE=1.25, BEFORE=0, AFTER=6, JUSTIFY=False, FIRST_INDENT_PT=22,
         TABLE_SZ=9.5, TOC_INDENT={1: 0, 2: 18, 3: 36},
-        TOC_TEXT_SZ={1: 11, 2: 10, 3: 9.5}, DOC_GRID=None,
+        TOC_TEXT_SZ={1: 11, 2: 10, 3: 9.5}, DOC_GRID=None, IMG_WIDTH_CM=15.5,
     ),
     "gov": dict(
         CN_FONT="標楷體", EN_FONT="Times New Roman",
         BODY_SZ=14, H1_SZ=14, H2_SZ=14, H3_SZ=14, TITLE_SZ=14, TOC_SZ=14,
         LINE=1.5, BEFORE=6, AFTER=0, JUSTIFY=True, FIRST_INDENT_PT=24,
         TABLE_SZ=11, TOC_INDENT={1: 0, 2: 24, 3: 48},
-        TOC_TEXT_SZ={1: 14, 2: 14, 3: 14}, DOC_GRID=360,
+        TOC_TEXT_SZ={1: 14, 2: 14, 3: 14}, DOC_GRID=360, IMG_WIDTH_CM=15.5,
     ),
 }
 PROFILE = "research"
@@ -67,7 +68,7 @@ def apply_profile(name):
     """把选定版式档的取值写入模块级常量（其余函数直接读这些常量）。"""
     global PROFILE, CN_FONT, EN_FONT, BODY_SZ, H1_SZ, H2_SZ, H3_SZ, TITLE_SZ
     global LINE, BEFORE, AFTER, JUSTIFY, FIRST_INDENT_PT, TABLE_SZ
-    global TOC_SZ, TOC_INDENT, TOC_TEXT_SZ, DOC_GRID
+    global TOC_SZ, TOC_INDENT, TOC_TEXT_SZ, DOC_GRID, IMG_WIDTH_CM
     assert name in PROFILES, "未知版式档：%s（可选 %s）" % (name, list(PROFILES))
     PROFILE = name
     c = PROFILES[name]
@@ -77,11 +78,13 @@ def apply_profile(name):
     LINE, BEFORE, AFTER = c["LINE"], c["BEFORE"], c["AFTER"]
     JUSTIFY, FIRST_INDENT_PT, TABLE_SZ = c["JUSTIFY"], c["FIRST_INDENT_PT"], c["TABLE_SZ"]
     TOC_INDENT, TOC_TEXT_SZ = c["TOC_INDENT"], c["TOC_TEXT_SZ"]
+    IMG_WIDTH_CM = c.get("IMG_WIDTH_CM", 15.5)
     DOC_GRID = c["DOC_GRID"]
 
 
 apply_profile("research")
 CLASSIFICATION = None
+IMG_WIDTH_CM = 15.5
 AUTHOR = "澳门AI产业与算力需求联合调研组"
 
 
@@ -446,6 +449,41 @@ def convert(md_path, out_path, title=None, toc=False):
             continue
 
         if re.match(r'^-{3,}$', stripped):
+            i += 1
+            continue
+
+        # 图片：![alt](path) → 居中插入；路径相对 md 所在目录解析
+        m = re.match(r'^!\[([^\]]*)\]\(([^)]+)\)\s*$', stripped)
+        if m:
+            ipath = m.group(2).strip()
+            if not os.path.isabs(ipath):
+                base = os.path.dirname(os.path.abspath(md_path))
+                # 依次尝试：md 同目录 → 上一级（.parts/ 下的底稿引用 ../figures/）→ 当前目录
+                for cand in (os.path.join(base, ipath),
+                             os.path.join(base, '..', ipath),
+                             os.path.abspath(ipath)):
+                    if os.path.exists(cand):
+                        ipath = cand
+                        break
+            if os.path.exists(ipath):
+                doc.add_picture(ipath, width=Cm(IMG_WIDTH_CM))
+                pic_p = doc.paragraphs[-1]
+                pic_p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                set_paragraph_spacing(pic_p, before=6, after=2, line=1.0)
+            else:
+                add_body(doc, '【缺图：%s】' % ipath, indent=False)
+            i += 1
+            continue
+
+        # 题注：*…* 独占一行 → 居中、小一号、灰色
+        m = re.match(r'^\*(?!\*)(.+?)\*$', stripped)
+        if m:
+            cp = doc.add_paragraph()
+            cp.alignment = WD_ALIGN_PARAGRAPH.CENTER
+            set_paragraph_spacing(cp, before=0, after=10, line=1.15)
+            add_inline(cp, m.group(1), size=BODY_SZ - 1.5)
+            for r in cp.runs:
+                r.font.color.rgb = RGBColor(0x59, 0x59, 0x59)
             i += 1
             continue
 
