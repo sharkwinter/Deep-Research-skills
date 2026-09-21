@@ -32,14 +32,57 @@ from docx.enum.table import WD_TABLE_ALIGNMENT
 from docx.oxml.ns import qn
 from docx.oxml import OxmlElement
 
-CN_FONT = "等线"
-EN_FONT = "Arial"
-BODY_SZ = 11
-H1_SZ = 16
-H2_SZ = 12.5
-H3_SZ = 11.5
-TITLE_SZ = 22
 CITE_COLOR = RGBColor(0x1F, 0x49, 0x7D)
+
+# --------------------------------------------------------------------------
+# 版式档（profile）：同一份 Markdown 可输出两种版式
+#   research = 研究版：简体 / 等线 11pt / 1.25 倍行距 / 段后 6pt / 左对齐
+#   gov      = 政府呈报版：繁體 / 標楷體 14pt / 1.5 倍行距 / 段前 6pt /
+#              两端对齐 / 首行缩进 24pt / 全篇同字号（标题仅加粗）
+#              对齐依据：《澳琴聯動推進算力建設初步分析報告》（科技廳 2026-08-25）
+#              实测该文：eastAsia=標楷體(740/740)、ascii=Times New Roman、
+#              sz=28 全篇唯一、spacing before=120 line=360 auto、jc=both、
+#              ind firstLine=480、docGrid linePitch=360
+# --------------------------------------------------------------------------
+PROFILES = {
+    "research": dict(
+        CN_FONT="等线", EN_FONT="Arial",
+        BODY_SZ=11, H1_SZ=16, H2_SZ=12.5, H3_SZ=11.5, TITLE_SZ=22, TOC_SZ=16,
+        LINE=1.25, BEFORE=0, AFTER=6, JUSTIFY=False, FIRST_INDENT_PT=22,
+        TABLE_SZ=9.5, TOC_INDENT={1: 0, 2: 18, 3: 36},
+        TOC_TEXT_SZ={1: 11, 2: 10, 3: 9.5}, DOC_GRID=None,
+    ),
+    "gov": dict(
+        CN_FONT="標楷體", EN_FONT="Times New Roman",
+        BODY_SZ=14, H1_SZ=14, H2_SZ=14, H3_SZ=14, TITLE_SZ=14, TOC_SZ=14,
+        LINE=1.5, BEFORE=6, AFTER=0, JUSTIFY=True, FIRST_INDENT_PT=24,
+        TABLE_SZ=11, TOC_INDENT={1: 0, 2: 24, 3: 48},
+        TOC_TEXT_SZ={1: 14, 2: 14, 3: 14}, DOC_GRID=360,
+    ),
+}
+PROFILE = "research"
+
+
+def apply_profile(name):
+    """把选定版式档的取值写入模块级常量（其余函数直接读这些常量）。"""
+    global PROFILE, CN_FONT, EN_FONT, BODY_SZ, H1_SZ, H2_SZ, H3_SZ, TITLE_SZ
+    global LINE, BEFORE, AFTER, JUSTIFY, FIRST_INDENT_PT, TABLE_SZ
+    global TOC_SZ, TOC_INDENT, TOC_TEXT_SZ, DOC_GRID
+    assert name in PROFILES, "未知版式档：%s（可选 %s）" % (name, list(PROFILES))
+    PROFILE = name
+    c = PROFILES[name]
+    CN_FONT, EN_FONT = c["CN_FONT"], c["EN_FONT"]
+    BODY_SZ, H1_SZ, H2_SZ, H3_SZ, TITLE_SZ, TOC_SZ = (
+        c["BODY_SZ"], c["H1_SZ"], c["H2_SZ"], c["H3_SZ"], c["TITLE_SZ"], c["TOC_SZ"])
+    LINE, BEFORE, AFTER = c["LINE"], c["BEFORE"], c["AFTER"]
+    JUSTIFY, FIRST_INDENT_PT, TABLE_SZ = c["JUSTIFY"], c["FIRST_INDENT_PT"], c["TABLE_SZ"]
+    TOC_INDENT, TOC_TEXT_SZ = c["TOC_INDENT"], c["TOC_TEXT_SZ"]
+    DOC_GRID = c["DOC_GRID"]
+
+
+apply_profile("research")
+CLASSIFICATION = None
+AUTHOR = "澳门AI产业与算力需求联合调研组"
 
 
 # --------------------------------------------------------------------------
@@ -109,8 +152,9 @@ def add_bookmark(paragraph, name, bid):
     paragraph._element.append(end)
 
 
-def add_internal_link(paragraph, anchor, text, size=BODY_SZ, superscript=True, color=CITE_COLOR):
+def add_internal_link(paragraph, anchor, text, size=None, superscript=True, color=CITE_COLOR):
     """插入指向书签 anchor 的内部超链接。"""
+    size = BODY_SZ if size is None else size
     hl = OxmlElement('w:hyperlink')
     hl.set(qn('w:anchor'), anchor)
     r = OxmlElement('w:r')
@@ -132,8 +176,9 @@ def add_internal_link(paragraph, anchor, text, size=BODY_SZ, superscript=True, c
     paragraph._element.append(hl)
 
 
-def add_superscript(paragraph, text, size=BODY_SZ, color=CITE_COLOR):
+def add_superscript(paragraph, text, size=None, color=CITE_COLOR):
     """插入普通（非链接）上标文本，用于引用的括号与逗号。"""
+    size = BODY_SZ if size is None else size
     r = paragraph.add_run(text)
     set_run_font(r, size=size)
     r.font.superscript = True
@@ -142,8 +187,9 @@ def add_superscript(paragraph, text, size=BODY_SZ, color=CITE_COLOR):
     return r
 
 
-def add_citation(paragraph, nums, size=BODY_SZ):
+def add_citation(paragraph, nums, size=None):
     """把 [[1,2,5]] 渲染为 [1,2,5]，其中**每个编号各自是可点击的内部超链接**。"""
+    size = BODY_SZ if size is None else size
     add_superscript(paragraph, '[', size)
     for k, num in enumerate(nums):
         if k:
@@ -161,8 +207,9 @@ FLAG_RE = re.compile(r'【(?:推算|估算|冲突|未取得|负面发现|口径�
 INLINE_RE = re.compile(r'(\*\*.+?\*\*|`[^`]+`|\[\[[0-9,\s]+\]\]|【(?:推算|估算|冲突|未取得|负面发现|口径冲突)】)')
 
 
-def add_inline(paragraph, text, size=BODY_SZ, base_bold=False, allow_cite=True,
+def add_inline(paragraph, text, size=None, base_bold=False, allow_cite=True,
                cite_size=None):
+    size = BODY_SZ if size is None else size
     for part in INLINE_RE.split(text):
         if not part:
             continue
@@ -191,16 +238,19 @@ def add_inline(paragraph, text, size=BODY_SZ, base_bold=False, allow_cite=True,
 # --------------------------------------------------------------------------
 # block builders (NO Word auto-numbering anywhere)
 # --------------------------------------------------------------------------
-def add_body(doc, text, indent=True, size=BODY_SZ, after=6):
+def add_body(doc, text, indent=True, size=None, after=None):
+    size = BODY_SZ if size is None else size
     p = doc.add_paragraph()
-    set_paragraph_spacing(p, before=0, after=after, line=1.25)
+    set_paragraph_spacing(p, before=BEFORE, after=AFTER if after is None else after, line=LINE)
+    if JUSTIFY:
+        p.alignment = WD_ALIGN_PARAGRAPH.JUSTIFY
     if indent:
-        p.paragraph_format.first_line_indent = Pt(size * 2)
+        p.paragraph_format.first_line_indent = Pt(FIRST_INDENT_PT)
     add_inline(p, text, size=size)
     return p
 
 
-def add_list_item(doc, marker, text, level=0, size=BODY_SZ, hang=13):
+def add_list_item(doc, marker, text, level=0, size=None, hang=13):
     """以字面量 marker（如 '1.' / '•'）渲染列表项，普通段落，无自动编号。"""
     p = doc.add_paragraph()
     set_paragraph_spacing(p, before=0, after=3, line=1.25)
@@ -214,18 +264,16 @@ def add_list_item(doc, marker, text, level=0, size=BODY_SZ, hang=13):
 
 def add_heading(doc, text, level):
     p = doc.add_paragraph()
-    if level == 1:
-        set_paragraph_spacing(p, before=16, after=8, line=1.2)
-        add_inline(p, text, size=H1_SZ, base_bold=True, allow_cite=False)
-        set_outline_level(p, 1)
-    elif level == 2:
-        set_paragraph_spacing(p, before=14, after=6, line=1.2)
-        add_inline(p, text, size=H2_SZ, base_bold=True, allow_cite=False)
-        set_outline_level(p, 2)
+    sz = {1: H1_SZ, 2: H2_SZ}.get(level, H3_SZ)
+    if PROFILE == "gov":            # 政府版式：全篇同字号，标题仅靠加粗区分
+        set_paragraph_spacing(p, before=BEFORE, after=AFTER, line=LINE)
+        if JUSTIFY:
+            p.alignment = WD_ALIGN_PARAGRAPH.JUSTIFY
     else:
-        set_paragraph_spacing(p, before=10, after=4, line=1.2)
-        add_inline(p, text, size=H3_SZ, base_bold=True, allow_cite=False)
-        set_outline_level(p, 3)
+        set_paragraph_spacing(p, before={1: 16, 2: 14}.get(level, 10),
+                              after={1: 8, 2: 6}.get(level, 4), line=1.2)
+    add_inline(p, text, size=sz, base_bold=True, allow_cite=False)
+    set_outline_level(p, min(level, 3))
     return p
 
 
@@ -243,8 +291,8 @@ def add_table(doc, rows):
             p = cell.paragraphs[0]
             set_paragraph_spacing(p, before=1, after=1, line=1.05)
             txt = row[j] if j < len(row) else ''
-            add_inline(p, txt.strip(), size=9.5, base_bold=(i == 0),
-                       allow_cite=True, cite_size=8.0)
+            add_inline(p, txt.strip(), size=TABLE_SZ, base_bold=(i == 0),
+                       allow_cite=True, cite_size=TABLE_SZ - 1.5)
             if i == 0:
                 shade_cell(cell, "DCE6F1")
     sp = doc.add_paragraph()
@@ -295,9 +343,9 @@ def add_toc(doc, lines):
     p = doc.add_paragraph()
     p.alignment = WD_ALIGN_PARAGRAPH.CENTER
     set_paragraph_spacing(p, before=12, after=8, line=1.2)
-    add_inline(p, '目　录', size=16, base_bold=True, allow_cite=False)
-    _indent = {1: 0, 2: 18, 3: 36}
-    _size = {1: 11, 2: 10, 3: 9.5}
+    add_inline(p, '目　錄' if PROFILE == 'gov' else '目　录', size=TOC_SZ,
+               base_bold=True, allow_cite=False)
+    _indent, _size = TOC_INDENT, TOC_TEXT_SZ
     for level, txt in entries:
         q = doc.add_paragraph()
         set_paragraph_spacing(q, before=0, after=1, line=1.15)
@@ -307,6 +355,12 @@ def add_toc(doc, lines):
     br = doc.add_paragraph()
     run = br.add_run()
     run.add_break(WD_BREAK.PAGE)
+
+
+def _add_classification(text):
+    """在页眉写入密级标识。政府文书惯例；是否启用由发文机关决定。"""
+    global CLASSIFICATION
+    CLASSIFICATION = text
 
 
 def convert(md_path, out_path, title=None, toc=False):
@@ -319,28 +373,46 @@ def convert(md_path, out_path, title=None, toc=False):
     normal.font.name = EN_FONT
     normal.font.size = Pt(BODY_SZ)
     normal.element.rPr.rFonts.set(qn('w:eastAsia'), CN_FONT)
-    normal.paragraph_format.space_after = Pt(6)
-    normal.paragraph_format.line_spacing = 1.25
+    normal.paragraph_format.space_after = Pt(AFTER)
+    normal.paragraph_format.line_spacing = LINE
 
     for section in doc.sections:
-        section.page_width = Twips(11905)
-        section.page_height = Twips(16840)
+        section.page_width = Twips(11906)
+        section.page_height = Twips(16838)
         section.top_margin = Twips(1440)
         section.bottom_margin = Twips(1440)
         section.left_margin = Twips(1800)
         section.right_margin = Twips(1800)
+        if DOC_GRID:                      # 字符网格：与政府文件一致
+            sectPr = section._sectPr
+            for g in sectPr.findall(qn('w:docGrid')):
+                sectPr.remove(g)
+            g = OxmlElement('w:docGrid')
+            g.set(qn('w:type'), 'lines')
+            g.set(qn('w:linePitch'), str(DOC_GRID))
+            sectPr.append(g)
 
     if title:
         p = doc.add_paragraph()
         p.alignment = WD_ALIGN_PARAGRAPH.CENTER
-        set_paragraph_spacing(p, before=24, after=18, line=1.2)
+        set_paragraph_spacing(p, before=24, after=18, line=LINE)
         add_inline(p, title, size=TITLE_SZ, base_bold=True, allow_cite=False)
         try:
             doc.core_properties.title = title
-            doc.core_properties.author = "澳门AI产业与算力需求联合调研组"
+            doc.core_properties.author = AUTHOR
             doc.core_properties.subject = "澳门AI发展现状与算力需求调研"
         except Exception:
             pass
+
+    try:
+        if CLASSIFICATION:
+            hp = doc.sections[0].header.paragraphs[0]
+            hp.alignment = WD_ALIGN_PARAGRAPH.CENTER
+            hr = hp.add_run(CLASSIFICATION)
+            set_run_font(hr, size=BODY_SZ)
+            hr.bold = True
+    except Exception:
+        pass
 
     try:
         footer = doc.sections[0].footer
@@ -456,7 +528,18 @@ def main():
     ap.add_argument('output')
     ap.add_argument('--title', default=None)
     ap.add_argument('--toc', action='store_true')
+    ap.add_argument('--profile', default='research', choices=sorted(PROFILES),
+                    help='版式档：research=研究版（简体/等线11pt）；'
+                         'gov=政府呈报版（繁體/標楷體14pt/1.5倍行距/两端对齐）')
+    ap.add_argument('--author', default=None)
+    ap.add_argument('--classification', default=None,
+                    help='页眉密级标识（如「秘密」）。留空则不加页眉——密级应由发文机关决定')
     args = ap.parse_args()
+    apply_profile(args.profile)
+    if args.author:
+        globals()['AUTHOR'] = args.author
+    if args.classification:
+        _add_classification(args.classification)
     convert(args.input, args.output, args.title, args.toc)
 
 
