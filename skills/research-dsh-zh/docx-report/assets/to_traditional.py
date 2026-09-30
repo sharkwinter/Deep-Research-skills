@@ -78,7 +78,9 @@ OVERRIDES = [
 
 # 保护模式：URL / 行内代码 / 文件路径 / 引用标记
 PROTECT = [
-    re.compile(r'https?://[^\s)>\]]+'),
+    # URL 必须只吃 ASCII 字符：早期写法 `[^\s)>\]]+` 会把紧跟其后的中文一起吞掉，
+    # 导致「…html。其内容摘录见下方…」整段脱离繁简转换（实测 24 条参考文献链接行中招）。
+    re.compile(r'https?://[A-Za-z0-9\-._~:/?#\[\]@!$&\'()*+,;=%]+'),
     re.compile(r'`[^`\n]*`'),
     re.compile(r'(?<![\w/])(?:[\w.\-]+/)+[\w.\-]*\.(?:md|csv|json|pdf|png|xlsx|docx|html|txt)'),
     re.compile(r'\[\[[0-9,\s]+\]\]'),
