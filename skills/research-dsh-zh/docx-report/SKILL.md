@@ -55,7 +55,7 @@ description: 以既有 Word（.docx）模板为骨架、结合工作区调研内
 
 ## 一、硬性要求（用户验收标准，必须逐条满足）
 
-> 以下 R1–R14 是本 skill 的**验收口径**，不是建议。
+> 以下 R1–R15 是本 skill 的**验收口径**，不是建议。
 > R1–R5 来自用户的明确反馈；**R6.1–R6.4** 借鉴《澳门科技企业AI价值场景调研COT-9.0-澳门科技特化版》的"物理确定性 / 调研量纲 / 专家基准 / 战略对齐偏离"四条准则（该文件为输入侧 COT，只取其数据可信度契约，不取其调研流水线与领域内容）；**R8** 取其"矛盾—场景映射"的筛选逻辑。
 
 ### R1 模板保真
@@ -341,6 +341,35 @@ Word 会把全文档所有引用同一编号定义的段落视为**同一个序�
 
 ---
 
+### R15 附录正文单倍行距 + 文件名用当天 CST 日期
+
+**用户明确要求**："所有附錄的内容使用单倍行距（标题除外），文件名使用当天CST（+8）时间。"
+
+1. **附录正文一律单倍行距**。自 `附錄A`（简体 `附录A`）起至文末，**所有正文块**——表格单元格、
+   列表项、引文块（`>`）、参考文献 `Rn.` 条目、图表题注——一律 `w:line="240" w:lineRule="auto"`；
+   **标题（章 / 节 / 子标题，含 `附錄A` 与 `【一】` 分组标题）保持版式档原行距**
+   （gov 档 = 360 / 1.5 倍）。"标题除外"是用户明确给出的例外，不得顺手一起压掉。
+2. **必须同时关闭网格吸附，否则改动等于没做**。gov 档页面带
+   `w:docGrid w:type="lines" w:linePitch="360"`；只要 `w:snapToGrid` 取默认值 true，
+   Word 会把每个文本行**吸附回网格行高 360**——单倍行距（240）与 1.5 倍（360）**视觉上完全一致**。
+   故附录正文段落必须显式写 `<w:snapToGrid w:val="0"/>`。
+   ⚠️ 该元素必须插在 `w:spacing` **之前**（OOXML `pPr` 子元素有固定次序，乱序 Word 视为非法文档）：
+   用 `pPr.insert_element_before(el, 'w:spacing', 'w:ind', …, 'w:pPrChange')`，**不能 `append`**。
+3. **实现已内置于 `assets/md2docx.py`**，不要手改 docx：
+   - 主循环遇到 `^附\s*[錄录]\s*[A-Z]` 的标题即置 `IN_APPENDIX = True`；
+   - `appendix_line(p, line)`：附录内返回 `1.0` 并写 `snapToGrid=0`，否则原样返回；
+   - 全部正文构造函数（`add_body` / `add_list_item` / `add_table` 的单元格与表后空段 /
+     `add_quote` / 题注 / 参考文献条目 / 图片段）都经 `appendix_line`；
+     **`add_heading` 不调用它** → 标题行距天然不受影响。
+4. **文件名日期**：交付文件名一律用**生成当天的 CST（UTC+8）日期**，即 `<报告名><YYYYMMDD>.docx`，
+   由 `"…$(TZ=Asia/Shanghai date +%Y%m%d).docx"` 生成——**不得沿用旧日期、不得手写**。
+   被取代的同名旧版本应删除，避免两份"最终版"并存。
+   （注：文内"编制/报告日期"属**内容**，不随文件名自动变；若需同步须先问用户，不要自行改。）
+5. **验收**（Step 7 已内置）：附录区**非标题段落 `w:line` 全部 = 240**、
+   **标题 `w:line` 全部 = 360**、**`pPr` 子元素乱序段落数 = 0**。
+
+---
+
 ## 二、执行流程
 
 ### Step 0：解析模板
@@ -421,12 +450,14 @@ python3 assets/md2docx.py .parts/full_draft.md "<输出目录>/<报告名>.docx"
 **政府呈报版（繁體 / 標楷體 14pt / 1.5 倍行距）**——两步，先转繁體再按 gov 档构建：
 ```bash
 python3 assets/to_traditional.py .parts/full_draft.md .parts/full_draft_tc.md
-python3 assets/md2docx.py .parts/full_draft_tc.md "澳門…報告<YYYYMMDD>.docx" \
+python3 assets/md2docx.py .parts/full_draft_tc.md "澳門…報告$(TZ=Asia/Shanghai date +%Y%m%d).docx" \
         --title "澳門…報告" --toc --profile gov \
         --author "…聯合調研組" [--classification "秘密"]
 ```
-
-转换器已内置：两套版式档（R1.1）、**字面量列表编号（无自动编号）**、`[[n]]` → 上标内部超链接（**逐编号成链**）、`Rn.` → 书签 + `[n]` 条目、目录、页脚页码、A4 页面、字符网格（gov 档）。
+> 文件名日期**必须**用 `$(TZ=Asia/Shanghai date +%Y%m%d)` 取**生成当天 CST**，不得沿用旧日期（R15-4）；
+> 生成后删除被取代的旧日期同名件，避免两份"最终版"并存。
+>
+> 转换器已内置：两套版式档（R1.1）、**字面量列表编号（无自动编号）**、`[[n]]` → 上标内部超链接（**逐编号成链**）、`Rn.` → 书签 + `[n]` 条目、目录、页脚页码、A4 页面、字符网格（gov 档）、**附录正文单倍行距 + 关网格吸附（R15）**。
 
 ### Step 7：验收自检（必须全绿）
 ```bash
@@ -443,6 +474,45 @@ print('superscript:', len(re.findall(r'w:vertAlign w:val="superscript"', x)))
 names = set(re.findall(r'<w:bookmarkStart [^>]*w:name="([^"]+)"', x))
 anchors = set(re.findall(r'<w:hyperlink w:anchor="([^"]+)"', x))
 print('unresolved anchors:', [a for a in anchors if a not in names])  # 必须 []
+
+# ★ R15 附录正文单倍行距（标题除外）＋ pPr 子元素次序合法
+SEQ = ["w:pStyle","w:keepNext","w:keepLines","w:pageBreakBefore","w:framePr",
+ "w:widowControl","w:numPr","w:suppressLineNumbers","w:pBdr","w:shd","w:tabs",
+ "w:suppressAutoHyphens","w:kinsoku","w:wordWrap","w:overflowPunct","w:topLinePunct",
+ "w:autoSpaceDE","w:autoSpaceDN","w:bidi","w:adjustRightInd","w:snapToGrid","w:spacing",
+ "w:ind","w:contextualSpacing","w:mirrorIndents","w:suppressOverlap","w:jc",
+ "w:textDirection","w:textAlignment","w:textboxTightWrap","w:outlineLvl","w:divId",
+ "w:cnfStyle","w:rPr","w:sectPr","w:pPrChange"]
+_id = {t: i for i, t in enumerate(SEQ)}
+bad_order = 0
+for pp in re.findall(r'<w:pPr>(.*?)</w:pPr>', x, re.S):
+    pos = [_id.get(t, 999) for t in re.findall(r'<(w:[A-Za-z]+)[ />]', pp)]
+    bad_order += (pos != sorted(pos))
+print('pPr 乱序段落数:', bad_order)                                  # 必须 0
+in_app, ok_single, bad_single, head_wrong = False, 0, 0, 0
+for p in re.findall(r'<w:p[ >].*?</w:p>', x.split('<w:body>', 1)[1], re.S):
+    txt = ''.join(re.findall(r'<w:t[^>]*>([^<]*)</w:t>', p))
+    head = '<w:outlineLvl' in p
+    if head and re.match(r'^附\s*[錄录]\s*[A-Z]', txt):
+        in_app = True
+    if not in_app:
+        continue
+    lv = re.search(r'w:line="(\d+)"', p)
+    lv = lv.group(1) if lv else None
+    if head:
+        head_wrong += (lv != '360')          # 标题须保持 1.5 倍
+    elif lv == '240':
+        ok_single += 1                       # 正文须单倍
+    else:
+        bad_single += 1
+print('附录正文单倍:', ok_single, '| 非单倍:', bad_single,
+      '| 标题被误压:', head_wrong)                                   # 期望 0 / 0
+
+# ★ R15-4 文件名日期 = 生成当天 CST(UTC+8)
+import datetime, os
+today = datetime.datetime.now(
+    datetime.timezone(datetime.timedelta(hours=8))).strftime('%Y%m%d')
+print('文件名含当天 CST 日期:', today in os.path.basename(f), today)   # 必须 True
 
 # ★ 多编号引用：必须逐编号成链
 for p in d.paragraphs:
@@ -586,7 +656,7 @@ PY
 
 | 文件 | 用途 |
 |---|---|
-| `assets/md2docx.py` | Markdown → docx 转换器：模板样式、**无自动编号列表**、`[[n]]` 上标内部超链接、`Rn.` 书签、目录、页脚页码 |
+| `assets/md2docx.py` | Markdown → docx 转换器：模板样式、**无自动编号列表**、`[[n]]` 上标内部超链接、`Rn.` 书签、目录、页脚页码、**附录正文单倍行距 + 关网格吸附（R15）** |
 | `assets/insert_citations.py` | 批量插入 `[[n]]` 角标（章节默认集 + 关键词触发；支持 `--strip` 重跑） |
 | `assets/add_table_citations.py` | **第一步**：按"(文件, 表头行号) → 各行引用"规则，批量为表格数据行**挂上** `[[n]]`（先挂到行尾，可重复执行） |
 | `assets/move_citations_to_value.py` | **第二步（R10 落位，必做）**：把行尾角标搬到**每个数值单元格**内；先干跑看"整行无角标/多指标列"计数，`--strict` 用于验收 |
@@ -628,6 +698,10 @@ PY
 | 企业卷/高校卷题号不同导致字段错配 | 高校卷的来源题是 q8、总量题是 q7，脚本默认按企业卷 q5/q4 取 | 用 `--total-qid/--source-qid/--detail-qid/--train-qid` 显式指定；**跑完先核对台账里的"来源""明细"两列是否取到了正确的题** |
 | 一家占合计过半却未提示 | 未做异常值检查 | R9-8：异常值单列并给含/不含该值的上下限 |
 | 问卷的"P@FP16"被当成稠密算力 | 自报口径含稀疏/厂商 boost，与卡时/年、稠密折算不可比 | R9-6 + 附录E 口径警示：以硬件明细反算倍率（澳门大学样例 1.7×），两类口径不混用 |
+| **附录把行距改成单倍，Word 里却看不出变化** | gov 档 `w:docGrid w:type="lines" linePitch=360` 把行高吸附回 360；只改 `w:line=240` 无效 | **R15-2**：附录正文段落必须同时写 `<w:snapToGrid w:val="0"/>`；`appendix_line()` 已内置 |
+| 加 `w:snapToGrid` 后 Word 报文档损坏/打开异常 | `append` 到 `pPr` 末尾，违反 OOXML 子元素次序（须在 `w:spacing` 之前） | 用 `pPr.insert_element_before(el, 'w:spacing', 'w:ind', …, 'w:pPrChange')`；Step 7 断言"乱序段落数=0" |
+| 改附录行距时把标题也压掉了 | 对全区间一刀切，未排除标题 | **R15-1**："标题除外"用 `add_heading` 不调用 `appendix_line()` 实现；验收含"标题被误压 = 0" |
+| 交付文件名日期是旧的/手写的 | 沿用了上次的命令行或手敲日期 | **R15-4**：用 `$(TZ=Asia/Shanghai date +%Y%m%d)`；生成后删掉被取代的旧日期同名件 |
 | **算力数字的角标"粗到行"** | 角标统一加在表格最后一列（来源/备注列），数值本身没有角标 | R10-1：角标贴到**数值所在单元格**；Step 7 测"数值单元格自带角标率＝100%" |
 | 引用条目只说"某调研报告"，无法定位 | 组引用兜底（`[[74,75,77]]`），条目缺 URL/日期/页码/记录号 | R10-2：按来源类型补"文号/URL+抓取日期/页码/记录级定位"；Step 7 扫描定位信息偏弱条目 |
 | 推算的算力值只引"本报告推算" | 入参来源未逐项引用 | R10-3：逐入参引用来源，与 R6.1 三件套配套 |

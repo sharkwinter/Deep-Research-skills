@@ -16,6 +16,10 @@ md2docx.py — 将结构化的中文 Markdown 调研报告转换为与模板
      从根本上避免 Word 打开后「全文档连续编号、跨标题续号」的问题。
   2. **引用角标**：正文中的 `[[n]]` 或 `[[n,m]]` 会渲染为**上标**，并作为**内部超链接**
      跳转到参考文献条目的书签 `_Refn`；参考文献条目以 `R1. ` 开头，自动生成书签。
+  3. **附录单倍行距**（R15）：自 `附錄A`／`附录A` 起，至文末，**正文一律单倍行距**
+     （表格单元格、列表、引文块、参考文献条目同）；**标题（章/节/子标题）不改行距**。
+     gov 档另需关闭这些段落的 `w:snapToGrid`——否则 `w:docGrid linePitch=360`
+     会把单倍行距重新吸附回网格行高，"单倍行距"在 Word 里看不出变化。
 
 用法：
   python3 md2docx.py <input.md> <output.docx> [--title "报告标题"] [--toc]
@@ -62,6 +66,8 @@ PROFILES = {
     ),
 }
 PROFILE = "research"
+# 附录区标记：主循环遇到 `附錄A`／`附录A` 起置 True，其后正文单倍行距（R15）
+IN_APPENDIX = False
 
 
 def apply_profile(name):
@@ -117,6 +123,38 @@ def set_paragraph_spacing(p, before=None, after=None, line=1.2):
         pf.space_after = Pt(after)
     if line is not None:
         pf.line_spacing = line
+
+
+def set_snap_to_grid(p, on):
+    """打开/关闭段落"与网格对齐"。
+
+    gov 档页面带 `w:docGrid w:type="lines" w:linePitch="360"`；只要 snapToGrid 为默认的
+    true，Word 会把每个文本行吸附到网格行高（360 twips），此时把行距设成单倍仍是 360，
+    与 1.5 倍**视觉上无差别**。要让"单倍行距"真正生效，必须显式写 `w:snapToGrid w:val="0"`。
+    """
+    pPr = p._element.get_or_add_pPr()
+    for old in pPr.findall(qn('w:snapToGrid')):
+        pPr.remove(old)
+    el = OxmlElement('w:snapToGrid')
+    el.set(qn('w:val'), '1' if on else '0')
+    # 必须插在 w:spacing 之前（OOXML pPr 子元素有固定次序，乱序会被 Word 判为非法）
+    pPr.insert_element_before(
+        el, 'w:spacing', 'w:ind', 'w:contextualSpacing', 'w:mirrorIndents',
+        'w:suppressOverlap', 'w:jc', 'w:textDirection', 'w:textAlignment',
+        'w:textboxTightWrap', 'w:outlineLvl', 'w:divId', 'w:cnfStyle',
+        'w:rPr', 'w:sectPr', 'w:pPrChange')
+    return p
+
+
+def appendix_line(p, line):
+    """附录（自 `附錄A` 起）内的正文段落返回单倍行距，并关闭网格吸附。
+
+    **标题不调用本函数**——标题（章/节/子标题）保持版式档原行距，这是用户明确的例外。
+    """
+    if not IN_APPENDIX:
+        return line
+    set_snap_to_grid(p, False)
+    return 1.0
 
 
 def set_outline_level(p, level):
@@ -244,7 +282,8 @@ def add_inline(paragraph, text, size=None, base_bold=False, allow_cite=True,
 def add_body(doc, text, indent=True, size=None, after=None):
     size = BODY_SZ if size is None else size
     p = doc.add_paragraph()
-    set_paragraph_spacing(p, before=BEFORE, after=AFTER if after is None else after, line=LINE)
+    set_paragraph_spacing(p, before=BEFORE, after=AFTER if after is None else after,
+                          line=appendix_line(p, LINE))
     if JUSTIFY:
         p.alignment = WD_ALIGN_PARAGRAPH.JUSTIFY
     if indent:
@@ -256,7 +295,7 @@ def add_body(doc, text, indent=True, size=None, after=None):
 def add_list_item(doc, marker, text, level=0, size=None, hang=13):
     """以字面量 marker（如 '1.' / '•'）渲染列表项，普通段落，无自动编号。"""
     p = doc.add_paragraph()
-    set_paragraph_spacing(p, before=0, after=3, line=1.25)
+    set_paragraph_spacing(p, before=0, after=3, line=appendix_line(p, 1.25))
     p.paragraph_format.left_indent = Pt(18 + level * 18 + hang)
     p.paragraph_format.first_line_indent = Pt(-hang)
     r = p.add_run(marker + ' ')
@@ -292,14 +331,14 @@ def add_table(doc, rows):
             cell = table.cell(i, j)
             cell.text = ''
             p = cell.paragraphs[0]
-            set_paragraph_spacing(p, before=1, after=1, line=1.05)
+            set_paragraph_spacing(p, before=1, after=1, line=appendix_line(p, 1.05))
             txt = row[j] if j < len(row) else ''
             add_inline(p, txt.strip(), size=TABLE_SZ, base_bold=(i == 0),
                        allow_cite=True, cite_size=TABLE_SZ - 1.5)
             if i == 0:
                 shade_cell(cell, "DCE6F1")
     sp = doc.add_paragraph()
-    set_paragraph_spacing(sp, before=0, after=4, line=1.0)
+    set_paragraph_spacing(sp, before=0, after=4, line=appendix_line(sp, 1.0))
     for r in sp.runs:
         r.font.size = Pt(2)
     return table
@@ -307,7 +346,7 @@ def add_table(doc, rows):
 
 def add_quote(doc, text):
     p = doc.add_paragraph()
-    set_paragraph_spacing(p, before=4, after=6, line=1.25)
+    set_paragraph_spacing(p, before=4, after=6, line=appendix_line(p, 1.25))
     p.paragraph_format.left_indent = Pt(16)
     add_inline(p, text, size=BODY_SZ - 0.5)
     for r in p.runs:
@@ -367,6 +406,8 @@ def _add_classification(text):
 
 
 def convert(md_path, out_path, title=None, toc=False):
+    global IN_APPENDIX
+    IN_APPENDIX = False
     with open(md_path, 'r', encoding='utf-8') as f:
         lines = f.read().split('\n')
 
@@ -469,7 +510,8 @@ def convert(md_path, out_path, title=None, toc=False):
                 doc.add_picture(ipath, width=Cm(IMG_WIDTH_CM))
                 pic_p = doc.paragraphs[-1]
                 pic_p.alignment = WD_ALIGN_PARAGRAPH.CENTER
-                set_paragraph_spacing(pic_p, before=6, after=2, line=1.0)
+                set_paragraph_spacing(pic_p, before=6, after=2,
+                                      line=appendix_line(pic_p, 1.0))
             else:
                 add_body(doc, '【缺图：%s】' % ipath, indent=False)
             i += 1
@@ -480,7 +522,7 @@ def convert(md_path, out_path, title=None, toc=False):
         if m:
             cp = doc.add_paragraph()
             cp.alignment = WD_ALIGN_PARAGRAPH.CENTER
-            set_paragraph_spacing(cp, before=0, after=10, line=1.15)
+            set_paragraph_spacing(cp, before=0, after=10, line=appendix_line(cp, 1.15))
             add_inline(cp, m.group(1), size=BODY_SZ - 1.5)
             for r in cp.runs:
                 r.font.color.rgb = RGBColor(0x59, 0x59, 0x59)
@@ -497,6 +539,8 @@ def convert(md_path, out_path, title=None, toc=False):
         if m:
             level = len(m.group(1))
             text = m.group(2).strip()
+            if re.match(r'^附\s*[錄录]\s*[A-Z]', text):
+                IN_APPENDIX = True      # 自「附錄A」起：正文单倍行距（R15）
             if level <= 2:
                 add_heading(doc, text, 1)
             elif level == 3:
@@ -512,7 +556,7 @@ def convert(md_path, out_path, title=None, toc=False):
         if m:
             num = m.group(1)
             p = doc.add_paragraph()
-            set_paragraph_spacing(p, before=0, after=3, line=1.2)
+            set_paragraph_spacing(p, before=0, after=3, line=appendix_line(p, 1.2))
             p.paragraph_format.left_indent = Pt(22)
             p.paragraph_format.first_line_indent = Pt(-22)
             add_bookmark(p, '_Ref%s' % num, bookmark_id)
