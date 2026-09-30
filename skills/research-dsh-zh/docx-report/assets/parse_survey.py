@@ -92,7 +92,8 @@ def col_of(fieldnames, qid):
     return None
 
 
-def load_responses(path, defs):
+def load_responses(path, defs, name_qid='q1', total_qid='q4',
+                   source_qid='q5', detail_qid='q6_detail', train_qid='q8'):
     rows = list(csv.DictReader(open(path, encoding='utf-8-sig')))
     fields = list(rows[0].keys())
 
@@ -105,12 +106,12 @@ def load_responses(path, defs):
         recs.append({
             'row': len(recs) + 1,                    # CSV 内行序（记录号），供逐值精确引用
             'created_at': g(r, 'created_at') or r.get('created_at', ''),
-            'name': g(r, 'q1') or '(未具名)',
+            'name': g(r, name_qid) or '(未具名)',
             'finished': g(r, 'finished') == 'True' or r.get('finished') == 'True',
-            'q4_raw': g(r, 'q4'),
-            'q5': g(r, 'q5'),
-            'q6_detail': g(r, 'q6_detail'),
-            'q8_train': g(r, 'q8'),
+            'q4_raw': g(r, total_qid),
+            'q5': g(r, source_qid),
+            'q6_detail': g(r, detail_qid),
+            'q8_train': g(r, train_qid),
             'q11': g(r, 'q11'),
             'q12': g(r, 'q12'),
             'q13': g(r, 'q13'),
@@ -236,10 +237,39 @@ def main():
     ap.add_argument('--out', required=True)
     ap.add_argument('--a100-p', type=float, default=0.312,
                     help='1×A100 80GB 的 FP16/BF16 稠密算力（PFLOPS），默认 0.312')
+    ap.add_argument('--total-qid', default='q4',
+                    help='总量题号：企业卷 q4；高校卷 q7（默认 q4）')
+    ap.add_argument('--name-qid', default='q1', help='主体名称题号（默认 q1）')
+    ap.add_argument('--dedup', action='store_true',
+                    help='按主体名称去重：同主体多次提交优先 finished=True，其次取最新')
+    ap.add_argument('--exclude', default='',
+                    help='剔除的主体名（逗号分隔），用于无效具名/非本地主体')
+    ap.add_argument('--title', default='当前算力台账', help='台账标题')
+    ap.add_argument('--source-qid', default='q5',
+                    help='算力来源题号：企业卷 q5；高校卷 q8')
+    ap.add_argument('--detail-qid', default='q6_detail',
+                    help='自建算力型号数量题号：企业卷 q6_detail；高校卷 q9_detail')
+    ap.add_argument('--train-qid', default='q8',
+                    help='训练/推理分配题号：企业卷 q8；高校卷 q11')
     a = ap.parse_args()
 
     defs = load_definitions(a.defpath)
-    recs, _ = load_responses(a.csv, defs)
+    recs, _ = load_responses(a.csv, defs, a.name_qid, a.total_qid,
+                             a.source_qid, a.detail_qid, a.train_qid)
+    recs = [r for r in recs if r['name'] != '(未具名)' or r['q4_raw']]
+    excl = [x.strip() for x in a.exclude.split(',') if x.strip()]
+    if excl:
+        recs = [r for r in recs if r['name'] not in excl]
+        print('已剔除主体：%s' % '、'.join(excl))
+    if a.dedup:
+        best = {}
+        for r in sorted(recs, key=lambda x: (x['finished'], x['created_at'])):
+            cur = best.get(r['name'])
+            if cur is None or (r['finished'] and not cur['finished']) or \
+               (r['finished'] == cur['finished'] and r['created_at'] >= cur['created_at']):
+                best[r['name']] = r
+        print('去重：%d 条 → %d 个主体' % (len(recs), len(best)))
+        recs = list(best.values())
     a100 = a.a100_p
 
     answered = []
@@ -263,9 +293,9 @@ def main():
     blank = [r for r in recs if not r['q4_raw'] and not r['q5'] and r['name'] == '(未具名)']
 
     L = []
-    L.append('# 当前算力台账（由线上问卷回复生成）\n')
+    L.append('# %s（由线上问卷回复生成）\n' % a.title)
     L.append('> 数据源：`%s`（问卷结构：`%s`）\n' % (a.csv, a.defpath))
-    L.append('> 取值口径：q4「當前企業在用算力共有多少 P@FP16？」为**必答题**；'
+    L.append('> 取值口径：总量题（%s）为**必答题**；' % a.total_qid +
              '折算基准 1×A100 80GB = %.3f P@FP16（稠密）。\n' % a100)
 
     L.append('\n## 一、样本与作答结构\n')
@@ -280,7 +310,7 @@ def main():
     L.append('| 完整提交中 q4 作答率 | **%d/%d = %.0f%%**（必答题，必然有答案） |'
              % (sum(1 for r in finished if 'q4' in r), len(finished),
                 100.0 * sum(1 for r in finished if 'q4' in r) / max(len(finished), 1)))
-    L.append('\n**结论：当前算力不是"无回复"。** q4 是必答题，完整提交 100%% 作答；'
+    L.append('\n**结论：当前算力不是"无回复"。** 总量题为必答题，完整提交 100%% 作答；'
              '未完成问卷亦留有 %d 条作答。其中 `0` 是**有效答案（＝无在用算力）**，'
              '不是缺答。\n' % (len(answered) - sum(1 for r in finished if 'q4' in r)))
 
@@ -328,8 +358,8 @@ def main():
              % (len(answered), tot, tot / a100))
 
     L.append('\n## 四、总口径拼装（当前算力＝企业＋高校＋政务/社会资本）\n')
-    L.append('> ⚠️ 问卷对象是**企业**，不含高校。报告"当前算力"总口径必须把高校侧并入，'
-             '否则会系统性低估。\n')
+    L.append('> ⚠️ 报告"当前算力"总口径必须**分项拼装**：企业（企业卷）＋高校（高校卷）＋政务/社会资本（公开资料）。'
+             '**两份问卷不得互相替代，也不得直接相加**——口径不同（见附录E）。\n')
     L.append('| 分项 | 来源 | 本地装机 | 备注 |')
     L.append('|---|---|---|---|')
     L.append('| 企业（本问卷） | q4＋q5＋q6 | 口径A ≈%.0f P（≈%.0f 张 A100 等效） | 12 家作答，其中 8 家完整提交 |'
