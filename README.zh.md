@@ -16,6 +16,7 @@
 - **技术研究**：技术对比、框架评估、工具选型
 - **市场研究**：竞品分析、行业趋势、产品比较
 - **尽职调查**：公司研究、投资分析、风险评估
+- **数据采集与回填**：纸质/扫描问卷识别并回填线上问卷、结果页与问卷一致性核查（`/survey-backfill`）
 
 ## 安装
 
@@ -110,7 +111,7 @@ bash scripts/install-dsh.sh zh
 ```
 
 安装到 `$DSH_HOME`（默认 `~/.dsh`）：
-- Skills → `~/.dsh/skills/`（`research`、`research-add-items`、`research-add-fields`、`research-deep`、`research-report`）
+- Skills → `~/.dsh/skills/`（`research`、`research-add-items`、`research-add-fields`、`research-deep`、`research-report`、`docx-report`、`research-slides`、`survey-backfill`）
 - web-search 子代理人设 + 策略模块 → `~/.dsh/agents/`（`web-search-agent.md`、`web-search-modules/`）
 
 平台差异说明：
@@ -138,6 +139,7 @@ DSH 会监听 skill 根目录，正在运行的会话无需重启即可发现新
 | `/research-add-fields` | 向现有outline添加更多字段定义 |
 | `/research-deep` | 使用并行agents对每个item进行深度调研 |
 | `/research-report` | 从JSON结果生成markdown报告 |
+| `/survey-backfill` | 手写/扫描纸质问卷 PDF → 线上问卷：视觉转写 + 多轮复核仲裁 + 平台校验适配 + pilot 提交回读 + 结果页一致性核查 |
 
 ### 两种调研模式
 

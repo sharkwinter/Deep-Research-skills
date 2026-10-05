@@ -16,6 +16,7 @@ A structured research workflow skill for Claude Code, OpenCode, Codex, and DeepS
 - **Technical Research**: Technology comparison, framework evaluation, tool selection
 - **Market Research**: Competitor analysis, industry trends, product comparison
 - **Due Diligence**: Company research, investment analysis, risk assessment
+- **Data Capture & Backfill**: Recognize handwritten/scanned paper surveys and backfill them into an online survey, then audit results pages against the questionnaire (`/survey-backfill`)
 
 ## Installation
 
@@ -110,7 +111,7 @@ bash scripts/install-dsh.sh zh
 ```
 
 Installs into `$DSH_HOME` (default `~/.dsh`):
-- Skills → `~/.dsh/skills/` (`research`, `research-add-items`, `research-add-fields`, `research-deep`, `research-report`)
+- Skills → `~/.dsh/skills/` (`research`, `research-add-items`, `research-add-fields`, `research-deep`, `research-report`, `docx-report`, `research-slides`, `survey-backfill`)
 - Web-search subagent persona + strategy modules → `~/.dsh/agents/` (`web-search-agent.md`, `web-search-modules/`)
 
 Platform notes:
@@ -138,6 +139,7 @@ DSH watches the skill roots, so running sessions pick the skills up without a re
 | `/research-add-fields` | Add more field definitions to existing outline |
 | `/research-deep` | Deep research each item with parallel agents |
 | `/research-report` | Generate markdown report from JSON results |
+| `/survey-backfill` | Backfill handwritten/scanned paper surveys into an online survey: vision transcription + multi-pass review/adjudication + platform-rule adaptation + pilot submit/read-back + results-page audit |
 
 ### Two research modes
 
