@@ -56,6 +56,7 @@ PROFILES = {
         LINE=1.25, BEFORE=0, AFTER=6, JUSTIFY=False, FIRST_INDENT_PT=22,
         TABLE_SZ=9.5, TOC_INDENT={1: 0, 2: 18, 3: 36},
         TOC_TEXT_SZ={1: 11, 2: 10, 3: 9.5}, DOC_GRID=None, IMG_WIDTH_CM=15.5,
+        CARD_NUM_SZ=13.5, CARD_LABEL_SZ=9.5, CARD_TITLE_SZ=10, CARD_FOOT_SZ=8.5,
     ),
     "gov": dict(
         CN_FONT="標楷體", EN_FONT="Times New Roman",
@@ -63,6 +64,9 @@ PROFILES = {
         LINE=1.5, BEFORE=6, AFTER=0, JUSTIFY=True, FIRST_INDENT_PT=24,
         TABLE_SZ=11, TOC_INDENT={1: 0, 2: 24, 3: 48},
         TOC_TEXT_SZ={1: 14, 2: 14, 3: 14}, DOC_GRID=360, IMG_WIDTH_CM=15.5,
+        # gov 档「全篇同字号」是硬约束（参照件 sz=28 唯一）：卡片数字**不放大**，
+        # 靠加粗＋深蓝＋图标强调；标签沿用表格降级字号，不引入新字号类。
+        CARD_NUM_SZ=14, CARD_LABEL_SZ=11, CARD_TITLE_SZ=11, CARD_FOOT_SZ=9,
     ),
 }
 PROFILE = "research"
@@ -75,6 +79,7 @@ def apply_profile(name):
     global PROFILE, CN_FONT, EN_FONT, BODY_SZ, H1_SZ, H2_SZ, H3_SZ, TITLE_SZ
     global LINE, BEFORE, AFTER, JUSTIFY, FIRST_INDENT_PT, TABLE_SZ
     global TOC_SZ, TOC_INDENT, TOC_TEXT_SZ, DOC_GRID, IMG_WIDTH_CM
+    global CARD_NUM_SZ, CARD_LABEL_SZ, CARD_TITLE_SZ, CARD_FOOT_SZ
     assert name in PROFILES, "未知版式档：%s（可选 %s）" % (name, list(PROFILES))
     PROFILE = name
     c = PROFILES[name]
@@ -86,6 +91,8 @@ def apply_profile(name):
     TOC_INDENT, TOC_TEXT_SZ = c["TOC_INDENT"], c["TOC_TEXT_SZ"]
     IMG_WIDTH_CM = c.get("IMG_WIDTH_CM", 15.5)
     DOC_GRID = c["DOC_GRID"]
+    CARD_NUM_SZ, CARD_LABEL_SZ = c["CARD_NUM_SZ"], c["CARD_LABEL_SZ"]
+    CARD_TITLE_SZ, CARD_FOOT_SZ = c["CARD_TITLE_SZ"], c["CARD_FOOT_SZ"]
 
 
 apply_profile("research")
@@ -205,11 +212,13 @@ def add_internal_link(paragraph, anchor, text, size=None, superscript=True, colo
     rFonts.set(qn('w:hAnsi'), EN_FONT)
     rFonts.set(qn('w:eastAsia'), CN_FONT)
     rPr.append(rFonts)
-    if superscript:
-        va = OxmlElement('w:vertAlign'); va.set(qn('w:val'), 'superscript'); rPr.append(va)
+    # rPr 子元素次序固定：rFonts → color → sz → vertAlign。
+    # （曾把 vertAlign 排在 color 之前，全篇 2,790 处 OOXML 非法；Word 容忍但不应留下）
     c = OxmlElement('w:color'); c.set(qn('w:val'), '%02X%02X%02X' % (color[0], color[1], color[2]))
     rPr.append(c)
     sz = OxmlElement('w:sz'); sz.set(qn('w:val'), str(int(size * 2))); rPr.append(sz)
+    if superscript:
+        va = OxmlElement('w:vertAlign'); va.set(qn('w:val'), 'superscript'); rPr.append(va)
     r.append(rPr)
     t = OxmlElement('w:t'); t.set(qn('xml:space'), 'preserve'); t.text = text
     r.append(t)
@@ -342,6 +351,310 @@ def add_table(doc, rows):
     for r in sp.runs:
         r.font.size = Pt(2)
     return table
+
+
+# --------------------------------------------------------------------------
+# 章节头部「关键数字带」（R21）
+#   一张原生表格 = 标题行（合并）+ N 张卡片（2 列）+ 口径脚注行（合并）。
+#   · 数字必须是**真文本**，角标才能挂上并保持可点击（R3 / R10-1）；
+#   · 图标是 Pillow 栅格化的透明 PNG，内联在卡片首行——不用 emoji 或字体符号，
+#     因为 Word 的跨机字形回退不可控（同 R1.2「架构图必须出图」的理由）；
+#   · 首行是标题行，因此 R10 校验器的 `rows[1:]`（跳过表头）语义刚好只跳过标题栏，
+#     第一行卡片不会被漏检。
+# --------------------------------------------------------------------------
+CARD_FILL = "F4F7FB"           # 卡片底纹
+CARD_TITLE_FILL = "DCE6F1"     # 标题行底纹（与其他表头一致）
+CARD_BORDER = "BFBFBF"
+CARD_ICON_CM = 0.42
+CARD_COL_CM = 7.3              # 正文宽 14.65cm ÷ 2（列宽固定，避免 Word 自动分配）
+CARD_NUM_COLOR = RGBColor(0x1F, 0x49, 0x7D)
+CARD_LABEL_COLOR = RGBColor(0x40, 0x40, 0x40)
+CARD_TITLE_COLOR = RGBColor(0x1F, 0x49, 0x7D)
+# 数字色调（与图标语义词色一致）：deep=存量/规模，green=需求/模型，ochre=判断/对比
+CARD_TONES = {
+    'deep': RGBColor(0x1F, 0x49, 0x7D),
+    'green': RGBColor(0x2E, 0x6B, 0x3E),
+    'ochre': RGBColor(0x8A, 0x6A, 0x1F),
+}
+CARD_TONE_RGB = {
+    'deep': (0x1F, 0x49, 0x7D),
+    'green': (0x2E, 0x6B, 0x3E),
+    'ochre': (0x8A, 0x6A, 0x1F),
+}
+# mini 图表：高度(cm) 与数字抬升量(半磅)。图形较高时把同一行的数字抬到视觉中线。
+# 用 w:position 抬升而不是给图表单独占一段——段落一多，卡片带就占掉半页。
+CARD_CHART = {
+    'donut': dict(h=1.02, pos=14),   # 构成 / 占比
+    'hbar':  dict(h=0.34, pos=0),    # 单一比例条
+    'col':   dict(h=0.80, pos=9),    # 分布 / 对比柱
+}
+# 渲染器版本：**必须参与缓存键**。否则改了画法之后，同名 spec 仍会命中旧 PNG，
+# 重建出来的文档里还是旧图——这是"图旧数新"的另一种形态。
+CHART_VER = 'v3'
+
+
+def resolve_img(path, md_path):
+    """把底稿里的相对图片路径解析为真实路径（md 同目录 → 上一级 → 绝对）。"""
+    if os.path.isabs(path):
+        return path
+    base = os.path.dirname(os.path.abspath(md_path))
+    for cand in (os.path.join(base, path),
+                 os.path.join(base, '..', path),
+                 os.path.abspath(path)):
+        if os.path.exists(cand):
+            return cand
+    return path
+
+
+def set_cell_borders(cell, color=CARD_BORDER, sz=4):
+    """给单元格加细边框（tcBorders 必须排在 w:shd 之前，否则 OOXML 非法）。"""
+    tcPr = cell._tc.get_or_add_tcPr()
+    for old in tcPr.findall(qn('w:tcBorders')):
+        tcPr.remove(old)
+    b = OxmlElement('w:tcBorders')
+    for side in ('top', 'left', 'bottom', 'right'):
+        e = OxmlElement('w:%s' % side)
+        e.set(qn('w:val'), 'single')
+        e.set(qn('w:sz'), str(sz))
+        e.set(qn('w:space'), '0')
+        e.set(qn('w:color'), color)
+        b.append(e)
+    tcPr.insert_element_before(b, 'w:shd', 'w:noWrap', 'w:tcMar',
+                               'w:textDirection', 'w:tcFitText', 'w:vAlign',
+                               'w:hideMark')
+
+
+def set_cell_valign(cell, val='center'):
+    tcPr = cell._tc.get_or_add_tcPr()
+    for old in tcPr.findall(qn('w:vAlign')):
+        tcPr.remove(old)
+    e = OxmlElement('w:vAlign')
+    e.set(qn('w:val'), val)
+    tcPr.append(e)
+
+
+def set_run_position(run, half_points):
+    """把 run 抬升/下沉若干半磅（w:position）。rPr 子元素次序固定，必须插在 w:sz 之前。"""
+    rPr = run._r.get_or_add_rPr()
+    for old in rPr.findall(qn('w:position')):
+        rPr.remove(old)
+    el = OxmlElement('w:position')
+    el.set(qn('w:val'), str(int(half_points)))
+    rPr.insert_element_before(
+        el, 'w:sz', 'w:szCs', 'w:highlight', 'w:u', 'w:effect', 'w:bdr', 'w:shd',
+        'w:fitText', 'w:vertAlign', 'w:rtl', 'w:cs', 'w:em', 'w:lang',
+        'w:eastAsianLayout', 'w:specVanish', 'w:oMath')
+    return run
+
+
+def _tint(rgb, f):
+    return tuple(int(round(255 - (255 - c) * f)) for c in rgb)
+
+
+def _chart_path(spec, tone):
+    """渲染 mini 图表 PNG（按 spec+tone 缓存）。
+
+    spec 形如 `donut:47/25/17/11`、`hbar:22.5/77.5`、`col:389596,209518,137034`。
+    **数据写在底稿里**：问卷口径一变（R20），图会随数字一起重算，不会出现"图旧数新"。
+    """
+    import hashlib
+    import tempfile
+    from PIL import Image, ImageDraw
+
+    tag = hashlib.md5(('%s|%s|%s' % (CHART_VER, spec, tone)).encode('utf-8')).hexdigest()[:12]
+    cache = os.path.join(tempfile.gettempdir(), 'md2docx_charts_%s' % CHART_VER)
+    os.makedirs(cache, exist_ok=True)
+    out = os.path.join(cache, 'c_%s.png' % tag)
+    if os.path.exists(out):
+        return out
+
+    kind, _, raw = spec.partition(':')
+    vals = [float(x) for x in re.split(r'[/,]', raw) if x.strip()] or [1.0]
+    base = CARD_TONE_RGB.get(tone, CARD_TONE_RGB['deep'])
+    SS = 4
+    W, H = {'hbar': (512, 80), 'col': (320, 220)}.get(kind, (256, 256))
+    img = Image.new('RGBA', (W * SS, H * SS), (255, 255, 255, 0))
+    dr = ImageDraw.Draw(img)
+
+    if kind == 'hbar':
+        # 多段比例条：第 1 段用语义主色（需要读者注意的那一段），其余段用中性色，
+        # 这样「训练 117 P ／ 其余 404 P」读起来是两段构成，而不是「某比例填了多长」。
+        # 先铺满中性轨道再叠各段，避免圆角在段间接缝处露白。
+        tot = sum(vals) or 1.0
+        r = int(H * SS * 0.34)
+        NEUTRAL = [(0xB9, 0xC6, 0xD4), (0xD9, 0xD9, 0xD9), (0xC9, 0xC9, 0xC9)]
+        dr.rounded_rectangle([0, 0, W * SS - 1, H * SS - 1], radius=r,
+                             fill=NEUTRAL[0])
+        x = 0
+        for i, v in enumerate(vals):
+            w = int(round(W * SS * v / tot)) if tot else 0
+            if v > 0:
+                w = max(w, int(H * SS * 0.9))
+            col = base if i == 0 else NEUTRAL[(i - 1) % len(NEUTRAL)]
+            if w:
+                dr.rounded_rectangle([x, 0, min(x + w, W * SS - 1), H * SS - 1],
+                                     radius=r, fill=col)
+            x += w
+    elif kind == 'col':
+        mx = max(vals) or 1.0
+        n = len(vals)
+        gap = W * SS * 0.07
+        bw = (W * SS - gap * (n + 1)) / n
+        for i, v in enumerate(vals):
+            hh = (H * SS - 8) * (v / mx)
+            x0 = gap + i * (bw + gap)
+            f = 1.0 if i == 0 else max(0.30, 0.74 - 0.13 * i)
+            dr.rounded_rectangle([x0, H * SS - hh, x0 + bw, H * SS - 2],
+                                 radius=int(bw * 0.20), fill=_tint(base, f))
+    else:                                   # donut
+        tot = sum(vals) or 1.0
+        pad = 0.04
+        box = [W * SS * pad, H * SS * pad, W * SS * (1 - pad), H * SS * (1 - pad)]
+        ang = -90.0
+        for i, v in enumerate(vals):
+            ext = 360.0 * v / tot
+            f = 1.0 if i == 0 else max(0.26, 0.68 - 0.15 * i)
+            dr.pieslice(box, ang, ang + ext, fill=_tint(base, f))
+            ang += ext
+        m = 0.32                            # 挖空中心 → 环
+        dr.ellipse([W * SS * m, H * SS * m, W * SS * (1 - m), H * SS * (1 - m)],
+                   fill=(255, 255, 255, 0))
+
+    img = img.resize((W, H), Image.LANCZOS)
+    img.save(out)
+    return out
+
+
+def add_cards(doc, spec, md_path):
+    """渲染 `:::cards` 区块。spec 见 parse_cards()。"""
+    cards = spec['cards']
+    ncol = 2
+    nrow = max(1, (len(cards) + ncol - 1) // ncol)
+    table = doc.add_table(rows=nrow + 2, cols=ncol)
+    table.alignment = WD_TABLE_ALIGNMENT.CENTER
+    # 固定栏宽：否则 Word 会按内容自动分配，两列宽度不相等、卡片错位
+    table.autofit = False
+    CW = CARD_COL_CM
+
+    # ---- 标题行（跨列合并）：本节关键数字 + 口径/导出时点 ----
+    head = table.cell(0, 0).merge(table.cell(0, ncol - 1))
+    head.text = ''
+    hp = head.paragraphs[0]
+    set_paragraph_spacing(hp, before=3, after=3, line=1.0)
+    set_snap_to_grid(hp, False)
+    add_inline(hp, spec.get('title') or '本节关键数字', size=CARD_TITLE_SZ,
+               base_bold=True, allow_cite=False)
+    for r in hp.runs:
+        r.font.color.rgb = CARD_TITLE_COLOR
+    if spec.get('subtitle'):
+        r = hp.add_run('　　' + spec['subtitle'])
+        set_run_font(r, size=CARD_LABEL_SZ, color=CARD_LABEL_COLOR)
+        r.font.bold = False
+    shade_cell(head, CARD_TITLE_FILL)
+    set_cell_borders(head, sz=4)
+    head.width = Cm(CW * ncol)
+
+    # ---- 卡片行 ----
+    for k, (icon, num, label, cite, tone) in enumerate(cards):
+        cell = table.cell(1 + k // ncol, k % ncol)
+        cell.text = ''
+
+        p1 = cell.paragraphs[0]
+        set_paragraph_spacing(p1, before=4, after=1, line=1.0)
+        set_snap_to_grid(p1, False)
+        isz, pos = CARD_ICON_CM, 0
+        ipath = None
+        if ':' in icon and icon.split(':', 1)[0] in CARD_CHART:
+            kind = icon.split(':', 1)[0]
+            ipath = _chart_path(icon, tone or 'deep')       # mini 图表
+            isz, pos = CARD_CHART[kind]['h'], CARD_CHART[kind]['pos']
+        else:
+            ipath = resolve_img('figures/icons/%s.png' % icon, md_path)
+        if os.path.exists(ipath):
+            run = p1.add_run()
+            run.add_picture(ipath, height=Cm(isz))
+            p1.add_run('　')
+        else:
+            p1.add_run('【缺图：%s】' % icon)
+        head_n = len(p1.runs)                  # 图形之后的 run 才需要抬升
+        add_inline(p1, num, size=CARD_NUM_SZ, base_bold=True, allow_cite=False)
+        ncolor = CARD_TONES.get((tone or 'deep').lower(), CARD_NUM_COLOR)
+        for r in p1.runs[head_n:]:             # 数字统一着色，较高的图把数字抬到中线
+            r.font.color.rgb = ncolor
+            if pos:
+                set_run_position(r, pos)
+        if cite:                               # 角标紧贴数值，落在数值所在格内（R10-1）
+            add_citation(p1, cite, size=CARD_LABEL_SZ - 1)
+
+        p2 = cell.add_paragraph()
+        set_paragraph_spacing(p2, before=0, after=4, line=1.05)
+        set_snap_to_grid(p2, False)
+        add_inline(p2, label, size=CARD_LABEL_SZ, allow_cite=False)
+        for r in p2.runs:
+            r.font.color.rgb = CARD_LABEL_COLOR
+
+        shade_cell(cell, CARD_FILL)
+        set_cell_borders(cell)
+        set_cell_valign(cell)
+        cell.width = Cm(CW)
+
+    # ---- 口径脚注行（跨列合并） ----
+    foot = table.cell(nrow + 1, 0).merge(table.cell(nrow + 1, ncol - 1))
+    foot.text = ''
+    fp = foot.paragraphs[0]
+    set_paragraph_spacing(fp, before=1, after=2, line=1.0)
+    set_snap_to_grid(fp, False)
+    add_inline(fp, spec.get('foot') or '', size=CARD_FOOT_SZ, allow_cite=True)
+    for r in fp.runs:
+        r.font.color.rgb = CARD_LABEL_COLOR
+    set_cell_borders(foot, color="FFFFFF")
+    foot.width = Cm(CW * ncol)
+
+    sp = doc.add_paragraph()
+    set_paragraph_spacing(sp, before=0, after=4, line=appendix_line(sp, 1.0))
+    for r in sp.runs:
+        r.font.size = Pt(2)
+    return table
+
+
+def parse_cards(lines, i):
+    """解析 :::cards 围栏。
+
+    首行  `:::cards 标题 | 副标题`
+    卡片  `图标名|数字|标签|角标|色调`   （角标形如 [[74,77]]，可留空）
+    脚注  `foot|口径说明…`
+    结束  `:::`
+    """
+    spec = {'title': None, 'subtitle': None, 'cards': [], 'foot': None}
+    first = lines[i].strip()[3:].strip()          # 去掉 ':::cards'
+    if first.lower().startswith('cards'):
+        first = first[5:].strip()
+    if first:
+        parts = [x.strip() for x in first.split('|', 1)]
+        spec['title'] = parts[0] or None
+        if len(parts) > 1:
+            spec['subtitle'] = parts[1] or None
+    i += 1
+    while i < len(lines):
+        s = lines[i].strip()
+        if s.startswith(':::'):
+            i += 1
+            break
+        if not s:
+            i += 1
+            continue
+        if s.startswith('foot|'):
+            spec['foot'] = s[5:].strip()
+            i += 1
+            continue
+        f = [x.strip() for x in s.split('|')]
+        while len(f) < 5:
+            f.append('')
+        icon, num, label, cite, tone = f[:5]
+        nums = re.findall(r'\d+', cite)
+        spec['cards'].append((icon, num, label, nums, tone))
+        i += 1
+    return spec, i
 
 
 def add_quote(doc, text):
@@ -496,16 +809,7 @@ def convert(md_path, out_path, title=None, toc=False):
         # 图片：![alt](path) → 居中插入；路径相对 md 所在目录解析
         m = re.match(r'^!\[([^\]]*)\]\(([^)]+)\)\s*$', stripped)
         if m:
-            ipath = m.group(2).strip()
-            if not os.path.isabs(ipath):
-                base = os.path.dirname(os.path.abspath(md_path))
-                # 依次尝试：md 同目录 → 上一级（.parts/ 下的底稿引用 ../figures/）→ 当前目录
-                for cand in (os.path.join(base, ipath),
-                             os.path.join(base, '..', ipath),
-                             os.path.abspath(ipath)):
-                    if os.path.exists(cand):
-                        ipath = cand
-                        break
+            ipath = resolve_img(m.group(2).strip(), md_path)
             if os.path.exists(ipath):
                 doc.add_picture(ipath, width=Cm(IMG_WIDTH_CM))
                 pic_p = doc.paragraphs[-1]
@@ -527,6 +831,13 @@ def convert(md_path, out_path, title=None, toc=False):
             for r in cp.runs:
                 r.font.color.rgb = RGBColor(0x59, 0x59, 0x59)
             i += 1
+            continue
+
+        # 章节头部「关键数字带」（R21）
+        if re.match(r'^:::cards\b', stripped):
+            spec, i = parse_cards(lines, i)
+            add_cards(doc, spec, md_path)
+            prev_was_ordered = False
             continue
 
         if stripped.startswith('|'):
