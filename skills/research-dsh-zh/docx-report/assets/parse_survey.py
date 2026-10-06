@@ -67,6 +67,17 @@ def strip_html(s):
     return re.sub(r'<[^>]+>', '', s or '').strip()
 
 
+def norm_name(s):
+    """主体名归一化键：统一全角括号与空白，供别名表与去重使用。
+
+    为什么必须统一：同一主体会以"简体名/繁體名""简称/全称""中英名"
+    重复提交（澳门项目实测 R20-1）。若别名表的值不经过同一 norm，
+    会凭空造出幽灵主体，把家数算多。
+    """
+    return (s or '').strip().replace('（', '(').replace('）', ')') \
+        .replace(' ', '').replace('\u3000', '')
+
+
 def load_definitions(path):
     d = json.load(open(path, encoding='utf-8'))
     out = {}
@@ -245,6 +256,10 @@ def main():
     ap.add_argument('--exclude', default='',
                     help='剔除的主体名（逗号分隔），用于无效具名/非本地主体')
     ap.add_argument('--title', default='当前算力台账', help='台账标题')
+    ap.add_argument('--alias', default='',
+                    help='主体别名表 JSON（alias→canonical），用于合并简繁/简称/中英名的重复提交（R20-1）')
+    ap.add_argument('--junk', default='',
+                    help='无效具名主体的正则（如测试件、纯数字、占位符），命中即剔除')
     ap.add_argument('--source-qid', default='q5',
                     help='算力来源题号：企业卷 q5；高校卷 q8')
     ap.add_argument('--detail-qid', default='q6_detail',
@@ -257,10 +272,31 @@ def main():
     recs, _ = load_responses(a.csv, defs, a.name_qid, a.total_qid,
                              a.source_qid, a.detail_qid, a.train_qid)
     recs = [r for r in recs if r['name'] != '(未具名)' or r['q4_raw']]
+    if a.alias:
+        raw = json.load(open(a.alias, encoding='utf-8'))
+        alias = {norm_name(k): norm_name(v) for k, v in raw.items()}
+        n_alias = 0
+        for r in recs:
+            if r['name'] == '(未具名)':
+                continue
+            k = norm_name(r['name'])
+            if k in alias:
+                n_alias += 1
+                r['name'] = alias[k]
+            # 关键：**所有**主体都以同一归一化键参与去重，
+            # 否则"全角括号/空白"差异会造出幽灵主体（R20-1）
+            r['name'] = norm_name(r['name'])
+        print('别名归并：%d 条记录命中别名表，全部主体已按归一化键去重' % n_alias)
+    if a.junk:
+        jre = re.compile(a.junk, re.I)
+        junk = [r['name'] for r in recs if jre.match(norm_name(r['name']))]
+        recs = [r for r in recs if not jre.match(norm_name(r['name']))]
+        print('已剔除无效具名：%s' % '、'.join(junk))
     excl = [x.strip() for x in a.exclude.split(',') if x.strip()]
     if excl:
         recs = [r for r in recs if r['name'] not in excl]
         print('已剔除主体：%s' % '、'.join(excl))
+    recs_pre = list(recs)          # 保留去重前的记录，供"总量题口径"单独去重
     if a.dedup:
         best = {}
         for r in sorted(recs, key=lambda x: (x['finished'], x['created_at'])):
@@ -272,8 +308,20 @@ def main():
         recs = list(best.values())
     a100 = a.a100_p
 
+    # ★ 总量口径单独去重：只在"已作答总量题"的记录内部去重。
+    #   否则一份"更晚但未填总量题"的部分作答，会把此前的有效答卷顶掉（R9-7 + R20-2）。
+    sub = [r for r in recs_pre if to_float(r['q4_raw'])[0] is not None]
+    best_q = {}
+    for r in sorted(sub, key=lambda x: (x['finished'], x['created_at'])):
+        c = best_q.get(r['name'])
+        if c is None or (r['finished'] and not c['finished']) or \
+           (r['finished'] == c['finished'] and r['created_at'] >= c['created_at']):
+            best_q[r['name']] = r
+    if a.dedup:
+        print('总量题口径去重：%d 条 → %d 个主体' % (len(sub), len(best_q)))
+
     answered = []
-    for r in recs:
+    for r in best_q.values():
         v, status = to_float(r['q4_raw'])
         if v is None:
             continue
@@ -301,7 +349,7 @@ def main():
     L.append('\n## 一、样本与作答结构\n')
     L.append('| 指标 | 数值 |')
     L.append('|---|---|')
-    L.append('| CSV 记录总数 | %d |' % len(recs))
+    L.append('| 参与统计的具名记录数（已剔除无效具名与非澳门主体） | %d |' % len(recs))
     L.append('| `finished=True`（完整提交） | %d（%.1f%%） |'
              % (len(finished), 100.0 * len(finished) / max(len(recs), 1)))
     L.append('| 去重后具名企业 | %d |' % len(named))
@@ -362,8 +410,10 @@ def main():
              '**两份问卷不得互相替代，也不得直接相加**——口径不同（见附录E）。\n')
     L.append('| 分项 | 来源 | 本地装机 | 备注 |')
     L.append('|---|---|---|---|')
-    L.append('| 企业（本问卷） | q4＋q5＋q6 | 口径A ≈%.0f P（≈%.0f 张 A100 等效） | 12 家作答，其中 8 家完整提交 |'
-             % (loc, loc / a100))
+    fin_subj = len({r['name'] for r in recs if r['finished']})
+    L.append('| 企业（本问卷） | q4＋q5＋q6 | 口径A ≈%.0f P（≈%.0f 张 A100 等效） | 具名主体 %d 个（其中 %d 个有完整提交）；%d 家提供 q4 自报；%d 家提供机柜现状 |'
+             % (loc, loc / a100, len(named), fin_subj, len(answered),
+                sum(1 for r in answered if r.get('q26_racks'))))
     L.append('| 高校与科研 | 高校调研报告（另行并入） | **待填** | 必须并入，并按同一 A100 等效口径折算 |')
     L.append('| 政务/社会资本 | 政府云、CTM AI Hub 等 | **待填**（多未公开） | 未公开者记为负面发现，不得静默省略 |')
 
