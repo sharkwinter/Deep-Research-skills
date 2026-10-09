@@ -22,7 +22,7 @@ description: 澳门调研本体的读写面。立项前查「这家/这个议题
 
 ```bash
 # 1) 本体库在哪、有没有东西
-/root/Working/Macao/macao_ontology/bin/onto plan --store sqlite
+/root/Working/Macao/macao_ontology/bin/onto plan
 
 # 2) 证据面是否就绪（引用解析得住才有意义）
 /root/Working/Macao/tools/evidence_archive.py  # 用 python3 跑 stats
