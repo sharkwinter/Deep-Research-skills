@@ -34,6 +34,20 @@ description: 对目标话题进行初步调研。支持两种模式——表格�
 
 ## 模式 A：表格模式
 
+<!-- kb:lookup -->
+### Step 0.9: 查重（澳门调研本体，若本机存在）
+
+立项之前先问一句「这家/这个议题查过没有」。命中就**只补空缺**，别重查已有证据的字段。
+
+```bash
+/root/Working/Macao/macao_ontology/bin/kb lookup "<item 名字>"
+/root/Working/Macao/macao_ontology/bin/kb fields <entity-id>   # 已覆盖 / 空缺
+```
+
+三种回答**含义不同**：命中=查过；`未登记：「X」`=没查过；报错/库为空=**不可判定**
+（不等于没查过）。非澳门调研话题可跳过本步。
+
+
 ### Step 1: 模型内部知识生成初步框架
 基于topic，利用模型已有知识生成：
 - 该领域的主要研究对象/items列表
@@ -159,6 +173,19 @@ prompt = f"""## 任务
 - 创建目录: `./{topic_slug}/`
 - 保存: `outline.yaml` 和 `fields.yaml`
 - 展示给用户确认
+
+<!-- kb:persist -->
+### Step 5.5: 落盘进本体（澳门调研本体，若本步产出属于它）
+
+结论收工后经受控通道写进本体 —— **先看要写什么，再真写**：
+
+```bash
+/root/Working/Macao/macao_ontology/bin/onto import --dry-run
+/root/Working/Macao/macao_ontology/bin/onto import
+```
+
+写入只走 `execute_action`（唯一写路径），须署名 `cause`；悬空引用会拦住整条写入；
+已存在的断言走 `UpdateClaim`（版本 +1），不会用 create 覆盖。
 
 ## 输出路径
 ```
