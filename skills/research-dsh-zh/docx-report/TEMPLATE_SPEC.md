@@ -77,27 +77,45 @@ print(re.search(r'<w:sectPr.*?</w:sectPr>', d, re.S).group(0))
 
 ---
 
-## 4. 版式档规格表（`--profile research|gov`）
+## 4. 版式档规格表（`--profile research|gov|summary`）
 
-| 项 | `research`（研究/内部版） | `gov`（政府呈报版） | gov 档依据（实测政府参照件） |
+| 项 | `research`（研究/内部版） | `gov`（政府呈报版） | `summary`（工作总结版） | gov 档依据（实测政府参照件） |
+|---|---|---|---|---|
+| 语体 | 简体 | **繁體** | 简体 | 全篇繁体 |
+| 中文字体 `w:eastAsia` | 等线 | **標楷體** | **仿宋** | 740/740 处均为標楷體 |
+| 西文字体 `w:ascii` | Arial | **Times New Roman** | Times New Roman | 全篇统一 |
+| 正文字号 | 11pt（sz=22） | **14pt（sz=28）** | 12pt（sz=24） | `sz` 值全篇唯一为 28 |
+| 标题字号 | 章 16 / 节 12.5 / 子节 11.5 | **同正文 14pt，仅加粗** | 章 14 / 节 12.5 / 子节 12 | 标题与正文同字号，靠加粗区分 |
+| 行距 `w:line` | 1.25 | **1.5（360 auto）** | 1.5（360 auto） | `spacing before=120 line=360` |
+| 附录区行距（R15） | 正文单倍 240 / 标题 1.25 | **正文单倍 240 / 标题 360** | 正文单倍 240 / 标题 1.2 | 自 `附錄A` 起；正文段同时写 `snapToGrid=0`，否则被 `docGrid 360` 吸附回 1.5 倍、肉眼无差别 |
+| 段前 | 0 | **6pt（120 twips）** | 6pt | 同上 |
+| 段后 | 6pt | 0 | 0 | 默认无段后 |
+| 对齐 `w:jc` | 左 | **两端对齐 both** | 两端对齐 both | `jc=both` 在 `pPrDefault` 中 |
+| 首行缩进 `w:ind firstLine` | 22pt | **24pt（480 twips）** | 24pt（480 twips） | `firstLine=480` |
+| 字符网格 `w:docGrid` | 无 | **lines / linePitch=360** | 无 | 有 |
+| 页面 | A4 11906×16838；上下 1440 / 左右 1800 | 同 | A4 11906×16838；上下 1440 / 左右 1800 | 一致（原模板为 11905×16840，差异 1 twip 可忽略） |
+| 页脚 | 居中页码 | 居中页码 | 居中页码 | 一致 |
+| 页眉 | 无 | **默认无**；可选 `--classification "秘密"` | 无（`--classification` 可选） | 参照件为「秘密」，密级由发文机关决定 |
+| 表内字号 | 9.5pt | **11pt** | 10.5pt | **有意偏离**：参照件无宽表，7 列对标表在 14pt 下会溢出 |
+| 输出命令 | `md2docx.py x.md out.docx --profile research --toc` | `to_traditional.py` → `md2docx.py x_tc.md out.docx --profile gov --toc` | `md2docx.py x.md out.docx --profile summary --toc` | — |
+
+### 4.0 `summary`（工作总结版）档的模板依据
+
+第三档 `summary` 对齐的是**工作总结类模板**（本项目为
+`Output_Report/Report_Template/澳门AI发展现状与算力需求调研报告总结.docx`），
+与 `research`／`gov` 两档的模板来源不同：
+
+| 项 | 模板实测 | 采信 | 说明 |
 |---|---|---|---|
-| 语体 | 简体 | **繁體** | 全篇繁体 |
-| 中文字体 `w:eastAsia` | 等线 | **標楷體** | 740/740 处均为標楷體 |
-| 西文字体 `w:ascii` | Arial | **Times New Roman** | 全篇统一 |
-| 正文字号 | 11pt（sz=22） | **14pt（sz=28）** | `sz` 值全篇唯一为 28 |
-| 标题字号 | 章 16 / 节 12.5 / 子节 11.5 | **同正文 14pt，仅加粗** | 标题与正文同字号，靠加粗区分 |
-| 行距 `w:line` | 1.25 | **1.5（360 auto）** | `spacing before=120 line=360` |
-| 附录区行距（R15） | 正文单倍 240 / 标题 1.25 | **正文单倍 240 / 标题 360** | 自 `附錄A` 起；正文段同时写 `snapToGrid=0`，否则被 `docGrid 360` 吸附回 1.5 倍、肉眼无差别 |
-| 段前 | 0 | **6pt（120 twips）** | 同上 |
-| 段后 | 6pt | 0 | 默认无段后 |
-| 对齐 `w:jc` | 左 | **两端对齐 both** | `jc=both` 在 `pPrDefault` 中 |
-| 首行缩进 `w:ind firstLine` | 22pt | **24pt（480 twips）** | `firstLine=480` |
-| 字符网格 `w:docGrid` | 无 | **lines / linePitch=360** | 有 |
-| 页面 | A4 11906×16838；上下 1440 / 左右 1800 | 同 | 一致（原模板为 11905×16840，差异 1 twip 可忽略） |
-| 页脚 | 居中页码 | 居中页码 | 一致 |
-| 页眉 | 无 | **默认无**；可选 `--classification "秘密"` | 参照件为「秘密」，密级由发文机关决定 |
-| 表内字号 | 9.5pt | **11pt** | **有意偏离**：参照件无宽表，7 列对标表在 14pt 下会溢出 |
-| 输出命令 | `md2docx.py x.md out.docx --profile research --toc` | `to_traditional.py` → `md2docx.py x_tc.md out.docx --profile gov --toc` | — |
+| 中文字体 | 全部 run 的 `w:eastAsia=仿宋`（`cs=Arial`） | ✅ 采信仿宋 | 标题、正文、表格同一字体 |
+| 书名标题 | 仿宋、`sz=44`（22pt）、`w:b`、居中、`spacing before=320 after=160` | ✅ | 由 `--title` 输出 |
+| 节标题 | 仿宋、`sz=25`（12.5pt）、`w:b`、`spacing before=280 line=288` | ✅ 取加粗与 1.2 行距；字号上调为 14pt 以拉开层级 | 模板只有「标题 + 1.x」两级 |
+| 正文几何 | 命名样式 `Body`：`sz=24`（12pt）／`line=360`（1.5 倍）／`ind firstLine=480`／`jc=both` | ✅ 采信 | 段落几何的唯一权威来源 |
+| 正文直接格式 | 部分段落覆写为 `sz=22`（11pt）／`line=240`（单倍） | ❌ 不采信 | 反复编辑留下的残留，与同文件 `Body` 样式自相矛盾 |
+| 页面 | A4 `11906×16838`；`pgMar` 上下 1440 / 左右 1800 | ✅ | 与另两档一致 |
+
+> **一句话判据**：模板里**命名样式与直接格式打架时，取命名样式**——直接格式常是编辑残留，
+> 而命名样式才是作者定义、并在全篇复用的版面契约。此判断须在交付说明中写明。
 
 ### 4.1 繁体转换的用字基线（不可想当然）
 

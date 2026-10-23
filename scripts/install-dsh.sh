@@ -89,10 +89,12 @@ if [ "$LINK_MODE" -eq 1 ]; then
   # 0. Rewrite repo sources in place (no-op after the first run)
   rewrite_tilde "$SKILLS_SRC" "$AGENTS_SRC"
 
-  # 1. Skills: symlink each skill dir to the repo
-  for d in research research-add-items research-add-fields research-deep research-report docx-report research-slides survey-backfill research-kb; do
-    rm -rf "$DSH_HOME/skills/$d"
-    ln -s "$SKILLS_SRC/$d" "$DSH_HOME/skills/$d"
+  # 1. Skills: symlink every skill dir in the repo (no hand-maintained list,
+  #    so a newly added skill cannot be silently skipped)
+  for d in "$SKILLS_SRC"/*/; do
+    name="$(basename "$d")"
+    rm -rf "$DSH_HOME/skills/$name"
+    ln -s "$SKILLS_SRC/$name" "$DSH_HOME/skills/$name"
   done
 
   # 2. Web-search subagent persona + strategy modules
@@ -101,7 +103,7 @@ if [ "$LINK_MODE" -eq 1 ]; then
   ln -s "$AGENTS_SRC/web-search-agent.md" "$DSH_HOME/agents/web-search-agent.md"
   ln -s "$AGENTS_SRC/web-search-modules" "$DSH_HOME/agents/web-search-modules"
 else
-  # 1. Skills: research / research-add-items / research-add-fields / research-deep / research-report
+  # 1. Skills: every skill dir in the repo
   cp -R "$SKILLS_SRC/." "$DSH_HOME/skills/"
 
   # 2. Web-search subagent persona + strategy modules

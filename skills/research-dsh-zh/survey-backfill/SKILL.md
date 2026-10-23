@@ -24,7 +24,7 @@ description: 把手写/扫描的纸质问卷 PDF 逐份识别并回填到线上�
 
 | 输入 | 说明 | 缺省 |
 |---|---|---|
-| 问卷 PDF | 扫描件；先 `pdftotext` 判断有无文本层、`pdfinfo` 看页数与旋转 | 必需 |
+| 问卷 PDF | 先判性质：**有文本层**（Word 导出）直接抽文字；**无文本层**（扫描件）才需视觉转写。`pdfinfo` 看页数与旋转 | 必需 |
 | 目标问卷 | URL 或 survey id（同时记下 workspace/environment id） | 必需 |
 | 凭据 | API key 的**文件路径**（如 `deploy/.env` 里的 `*_API_KEY`） | 必需 |
 | 题目映射 | 纸质题号 ↔ 线上 question id | 缺省按内容自动对齐，并请用户确认 |
@@ -44,8 +44,25 @@ description: 把手写/扫描的纸质问卷 PDF 逐份识别并回填到线上�
 ## 工作流
 
 ### Step 0　盘点参数与凭据
-`pdfinfo`/`pdftotext` 判断扫描件性质；确认目标问卷 id；定位 API key。
+判断 PDF 性质（有无文本层、页数、旋转）；确认目标问卷 id；定位 API key。
 用 AskUserQuestion 确认：页数=受访者数？数值处置策略？是否允许写入线上？
+
+**先分支：文字层 vs 扫描件**（决定后面走不走视觉）
+
+```bash
+pdfinfo "<pdf>"                    # 页数/旋转
+pdftotext -f 1 -l 1 "<pdf>" - | head -c 300   # 空 => 纯扫描件
+```
+
+- **有文本层**（典型：`Creator = Microsoft® Word`）→ **不要做视觉转写**。直接抽文字、
+  逐题比对即可，Step 2–4 的三轮视觉流程整段跳过；本 skill 的「手写单轮不可信」前提
+  **不成立**。文本抽取即为底稿，落盘 `pdf_text.txt` 备审。
+- **无文本层** → 走 Step 2–4 的渲染 + 视觉 fan-out。
+
+> ⚠️ **工具可用性不等于假设**：`poppler`（`pdftoppm`/`pdfinfo`/`pdftotext`）在部分环境
+> **不存在**。先 `command -v pdftoppm`；缺则改用已有的 PDF 库渲染（如 `pymupdf`：
+> `fitz.open(pdf)[i].get_text()` 抽文字、`get_pixmap(dpi=150).save(…)` 出页图），
+> **不要在受限环境里现装套件**。
 
 ### Step 1　拉取线上问卷结构
 用平台 API 取问卷定义并落盘 `survey.json`，必须记录：
@@ -53,10 +70,11 @@ description: 把手写/扫描的纸质问卷 PDF 逐份识别并回填到线上�
 - 提交接口必填字段与校验规则；列表接口的分页参数。
 > 结构没拿到就不要开始识别——识别结果无处映射。
 
-### Step 2　渲染页图
+### Step 2　渲染页图（**仅扫描件需要**）
 `bash assets/render_pages.sh <pdf> <outdir> [dpi]`：PDF→PNG（缺省 150 DPI）并生成上/下半页裁剪图（供复核）。
+文字层 PDF **跳过本步**。
 
-### Step 3　并行视觉转写（必须用支持图像的模型）
+### Step 3　并行视觉转写（**仅扫描件需要**；必须用支持图像的模型）
 按 `playbook_transcribe.md` 的模板 fan-out：每页一个子代理，**结构化输出**（页角色／姓名／逐题答案／勾选项／备注）。
 > DSH 注意：主模型若不支持图像，`read_image` 会直接报错；用 `workflow` 的 `agent(prompt, {provider, model})` 覆盖到图像模型。
 
@@ -79,6 +97,12 @@ description: 把手写/扫描的纸质问卷 PDF 逐份识别并回填到线上�
 ### Step 8　结果页/汇总一致性核查
 若存在静态结果页或报表（常由 spec/模板 + cron 生成）：
 - 逐题比对 **live 问卷题库 ↔ 结果页题卡**（题号、题序、是否覆盖）：结果页按 spec 渲染时，**spec 缺题会静默少一张卡**；
+- **题序也要比，不能只比集合**（实测翻车点）：结果页常按 `spec['sections']` 顺序渲染，而受访者按
+  `spec['questions']`（＝线上 `blocks`）顺序作答。只写 `set(questions) == set(section_refs)` 的话，
+  两者**集合相等而顺序不同**时校验会**静默通过** —— 结果页会把题卡挂到错的题组，甚至把题卡排到
+  CTA 卡（`type: cta`）之后。修法：把题移回**所属题组**，CTA 卡必须最后。
+  - 现成工具：`/xlsx-to-survey` 的 `assets/check_spec.py <spec> --live`（详列每题实际落在哪个 section），
+    并可直接对 spec 做 `--strict` 判定；
 - 核对每题「已答数」与 API 一致；选择题分桶、均值/总和等统计与数据自洽；
 - 需要改 spec/模板时先备份原文件，再重跑生成脚本，并回读页面验证。
 
@@ -108,6 +132,12 @@ description: 把手写/扫描的纸质问卷 PDF 逐份识别并回填到线上�
 | 单点复看 | `read_image`（读裁剪图） |
 | 落盘/修改 | `write` / `edit` |
 | 关键决策 | `ask_user_question`（页数口径、数值策略、是否写入线上） |
+
+## 相关 skill
+
+- **`/xlsx-to-survey`** —— 问卷「**造卷 / 管卷 / 出结果**」面：xlsx/docx → 双语线上问卷、结果导出、
+  改题后结构同步，以及 spec 自检工具 `assets/check_spec.py`（含**题序**检查，正是本 skill Step 8 所需）。
+  本 skill 负责「**把填好的纸本变成答卷**」；两者共用同一套题定义与结果页。
 
 ## 平台适配
 

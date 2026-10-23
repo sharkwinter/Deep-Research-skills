@@ -141,6 +141,12 @@ def to_float(s):
     m = re.search(r'-?\d+(?:[.,]\d+)?', t)
     if not m:
         return None, '非数值：%r' % t[:20]
+    # 首个数字后面紧跟的单位才是它的量纲：若写的是 token，就不能当 P@FP16 用
+    # （否则「3 billion tokens／month」会被读成 3 P；注意不能只搜全串是否含
+    #  "P@FP16"，因为题干里常出现「未填 P@FP16」这类字样，会把人骗过去）。
+    after = re.split(r'[，。；、（）()／/,:：]', t[m.end():])[0].lower()
+    if 'token' in after:
+        return None, '非 P 量（Token 口径，未填 P@FP16）：%r' % t[:26]
     v = float(m.group(0).replace(',', ''))
     return v, ('有效（0＝无在用算力）' if v == 0 else '有效')
 
@@ -321,9 +327,14 @@ def main():
         print('总量题口径去重：%d 条 → %d 个主体' % (len(sub), len(best_q)))
 
     answered = []
+    non_p = []
     for r in best_q.values():
         v, status = to_float(r['q4_raw'])
         if v is None:
+            # 有作答但量纲不是 P（如 Token 口径）——不得当作 0，也不得丢出视野
+            if (r['q4_raw'] or '').strip():
+                r['q4_status'] = status
+                non_p.append(r)
             continue
         r['q4'] = v
         r['q4_status'] = status
@@ -336,6 +347,15 @@ def main():
         r['cards'], r['implied_p'], r['all_known'] = cross_check(r['q6_detail'])
         answered.append(r)
 
+    # 有作答、但量纲不是 P（如 Token 口径）的记录：不进 P 合计，但必须出现在台账里，
+    # 否则读者会以为"这家没答"，而实际是"答了别的量纲"。
+    if not non_p:
+        for r in recs_pre:
+            if (r['q4_raw'] or '').strip() and to_float(r['q4_raw'])[0] is None:
+                if r['name'] in [x['name'] for x in non_p]:
+                    continue
+                r['q4_status'] = to_float(r['q4_raw'])[1]
+                non_p.append(r)
     finished = [r for r in recs if r['finished']]
     named = {r['name'] for r in recs if r['name'] != '(未具名)'}
     blank = [r for r in recs if not r['q4_raw'] and not r['q5'] and r['name'] == '(未具名)']
@@ -388,6 +408,12 @@ def main():
         grp[r['bucket']][0] += r['q4']
         grp[r['bucket']][1] += 1
     tot = sum(r['q4'] for r in answered)
+    if non_p:
+        L.append('\n> **未计入 P 合计的作答**（有作答但量纲不是 P@FP16，合计中按「未填 P 值」处理，**不得读作 0**）：')
+        for r in non_p:
+            L.append('> - **%s**：%s —— %s'
+                     % (r['name'], r.get('q4_status', ''),
+                        (r['q4_raw'] or '').strip().replace('|', '丨')[:150]))
     L.append('\n## 三、两口径汇总（**不得混算**）\n')
     L.append('| 口径 | 家数 | Σ P@FP16 | ≈ A100 等效（张） | 含义 |')
     L.append('|---|---|---|---|---|')

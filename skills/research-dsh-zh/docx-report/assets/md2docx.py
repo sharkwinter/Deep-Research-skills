@@ -38,6 +38,8 @@ from docx.oxml.ns import qn
 from docx.oxml import OxmlElement
 
 CITE_COLOR = RGBColor(0x1F, 0x49, 0x7D)
+# 内部交叉引用（R27）：指向本报告内部某节／某表／某段的跳转上标，与外部来源角标异色
+XREF_COLOR = RGBColor(0x0F, 0x6B, 0x5C)
 
 # --------------------------------------------------------------------------
 # 版式档（profile）：同一份 Markdown 可输出两种版式
@@ -57,6 +59,7 @@ PROFILES = {
         TABLE_SZ=9.5, TOC_INDENT={1: 0, 2: 18, 3: 36},
         TOC_TEXT_SZ={1: 11, 2: 10, 3: 9.5}, DOC_GRID=None, IMG_WIDTH_CM=15.5,
         CARD_NUM_SZ=13.5, CARD_LABEL_SZ=9.5, CARD_TITLE_SZ=10, CARD_FOOT_SZ=8.5,
+        APPENDIX_STEP=1, REF_STEP=1,      # 附录正文降 1pt；参考文献条目再降 1pt
     ),
     "gov": dict(
         CN_FONT="標楷體", EN_FONT="Times New Roman",
@@ -67,6 +70,25 @@ PROFILES = {
         # gov 档「全篇同字号」是硬约束（参照件 sz=28 唯一）：卡片数字**不放大**，
         # 靠加粗＋深蓝＋图标强调；标签沿用表格降级字号，不引入新字号类。
         CARD_NUM_SZ=14, CARD_LABEL_SZ=11, CARD_TITLE_SZ=11, CARD_FOOT_SZ=9,
+        # 附录字号层级（用户 2026-10-06 要求）：正文 14pt → 附录正文 12pt（小四）
+        # → 参考文献条目 10.5pt（五号）。这是对「全篇同字号」的**有意偏离**，须在交付说明写明。
+        APPENDIX_STEP=2, REF_STEP=1.5,
+    ),
+    # summary = 工作总结版：对齐《澳门AI发展现状与算力需求调研报告总结.docx》模板
+    #   模板实测（document.xml 直接格式）：全篇中英西文字体均为 **仿宋**
+    #   （ascii/eastAsia/hAnsi=仿宋、cs=Arial）；书名 22pt 加粗居中；节标题加粗。
+    #   段落几何取该模板命名样式 `Body`：12pt（sz 24）/ 1.5 倍行距（line 360）/
+    #   首行缩进 480 twips（=24pt）/ 两端对齐；页面 A4、上下 1440、左右 1800。
+    #   模板正文的直接格式另有 11pt＋单倍行距的写法，属编辑残留，未采信。
+    "summary": dict(
+        CN_FONT="仿宋", EN_FONT="Times New Roman",
+        BODY_SZ=12, H1_SZ=14, H2_SZ=12.5, H3_SZ=12, TITLE_SZ=22, TOC_SZ=16,
+        LINE=1.5, BEFORE=6, AFTER=0, JUSTIFY=True, FIRST_INDENT_PT=24,
+        TABLE_SZ=10.5, TOC_INDENT={1: 0, 2: 18, 3: 36},
+        TOC_TEXT_SZ={1: 11, 2: 10, 3: 9.5}, DOC_GRID=None, IMG_WIDTH_CM=15.5,
+        CARD_NUM_SZ=13.5, CARD_LABEL_SZ=9.5, CARD_TITLE_SZ=10, CARD_FOOT_SZ=8.5,
+        APPENDIX_STEP=1, REF_STEP=1,      # 附录正文 11pt；参考文献条目 10pt
+        LIST_LINE=1.5,                    # 列表项随正文行距，否则 1.25 会显得偏挤
     ),
 }
 PROFILE = "research"
@@ -80,6 +102,7 @@ def apply_profile(name):
     global LINE, BEFORE, AFTER, JUSTIFY, FIRST_INDENT_PT, TABLE_SZ
     global TOC_SZ, TOC_INDENT, TOC_TEXT_SZ, DOC_GRID, IMG_WIDTH_CM
     global CARD_NUM_SZ, CARD_LABEL_SZ, CARD_TITLE_SZ, CARD_FOOT_SZ
+    global APPENDIX_SZ, REF_SZ, LIST_LINE
     assert name in PROFILES, "未知版式档：%s（可选 %s）" % (name, list(PROFILES))
     PROFILE = name
     c = PROFILES[name]
@@ -93,6 +116,10 @@ def apply_profile(name):
     DOC_GRID = c["DOC_GRID"]
     CARD_NUM_SZ, CARD_LABEL_SZ = c["CARD_NUM_SZ"], c["CARD_LABEL_SZ"]
     CARD_TITLE_SZ, CARD_FOOT_SZ = c["CARD_TITLE_SZ"], c["CARD_FOOT_SZ"]
+    APPENDIX_SZ = c["BODY_SZ"] - c["APPENDIX_STEP"]
+    REF_SZ = APPENDIX_SZ - c["REF_STEP"]
+    # 列表项行距：未声明的档沿用历史默认 1.25（不改动 research／gov 的既有版面）
+    LIST_LINE = c.get("LIST_LINE", 1.25)
 
 
 apply_profile("research")
@@ -164,6 +191,16 @@ def appendix_line(p, line):
     return 1.0
 
 
+def appendix_sz(base):
+    """附录（自 `附錄A` 起）内的正文一律降一号；`base` 为正文区该处字号。
+
+    与 `appendix_line()` 配套：一个管行距、一个管字号。**标题不调用本函数**（标题不算正文）。
+    """
+    if not IN_APPENDIX:
+        return base
+    return base - (BODY_SZ - APPENDIX_SZ)
+
+
 def set_outline_level(p, level):
     pPr = p._element.get_or_add_pPr()
     ol = OxmlElement('w:outlineLvl')
@@ -196,8 +233,14 @@ def add_bookmark(paragraph, name, bid):
     start.set(qn('w:name'), name)
     end = OxmlElement('w:bookmarkEnd')
     end.set(qn('w:id'), str(bid))
-    paragraph._element.insert(0, start)
-    paragraph._element.append(end)
+    # w:pPr 必须是 w:p 的第一个子元素，bookmarkStart 只能排在它之后
+    pel = paragraph._element
+    pPr = pel.find(qn('w:pPr'))
+    if pPr is not None:
+        pPr.addnext(start)
+    else:
+        pel.insert(0, start)
+    pel.append(end)
 
 
 def add_internal_link(paragraph, anchor, text, size=None, superscript=True, color=CITE_COLOR):
@@ -249,12 +292,218 @@ def add_citation(paragraph, nums, size=None):
 
 
 # --------------------------------------------------------------------------
+# 内部交叉引用（R27）：把「数据」指到本报告内部的「详细表／节／段」
+#   底稿写法（用**空格**分隔，不用竖线——竖线会破坏 markdown 表格分列）：
+#     [[§4.2.2]]          整节（跳到节标题）
+#     [[§4.2.2 表]]       该节第 1 张表
+#     [[§4.2.2 表2]]      该节第 2 张表
+#     [[§4.2.2 （11）]]   该节以「**（11）…**」开头的那一段
+#     [[§4.2 关键发现]]   该节下标题文字含「关键发现」的非编号子标题
+#   渲染为**上标 §4.2.2**（深青色、可点击），紧跟在来源角标之后。
+#   书签在 build_xref_index() 中按底稿顺序预分配（行号 → 书签名一一对应），
+#   因此后文增删段落不会让既有跳转指错位置。
+# --------------------------------------------------------------------------
+XREF_MAP = {}            # 规范键 -> 书签名
+XREF_MISSING = []        # 未能解析的引用（构建后打印告警）
+XREF_LINKED = [0]        # 已成功挂上的交叉引用数
+_XREF_BID = [5000]       # 书签 id 段（与参考文献的 100 起不冲突）
+
+
+def next_xref_bid():
+    _XREF_BID[0] += 1
+    return _XREF_BID[0]
+
+
+def canon_sec(sec):
+    """节的规范键：数字节号原样；附录字母节统一为 appx（简体「附录B」与
+    繁體「附錄B」必须落到同一个键，否则繁體档会全部解析失败）。"""
+    s = (sec or '').strip()
+    m = re.match(r'^附\s*[錄录]\s*([A-Za-z])$', s)
+    if m:
+        return 'app' + m.group(1).lower()
+    return s
+
+
+def xref_anchor(sec):
+    c = canon_sec(sec)
+    if re.match(r'^app[A-Za-z]$', c):
+        return '_SecApp' + c[-1].upper()          # 书签名保持 ASCII，避免 Word 兼容问题
+    return '_Sec' + re.sub(r'[^0-9A-Za-z_]', '_', c.replace('.', '_'))
+
+
+def norm_xref(sec, what=''):
+    w = (what or '').replace('（', '(').replace('）', ')').replace('　', ' ').strip()
+    return canon_sec(sec) + ('|' + w if w else '')
+
+
+def squash(s):
+    """行名比对用的强归一化：去掉空白、标点与括号，只留中日韩、字母、数字。"""
+    return re.sub(r'[^0-9A-Za-z\u4e00-\u9fff]', '', (s or '')).lower()
+
+
+def resolve_xref(sec, what):
+    key = norm_xref(sec, what)
+    if key in XREF_MAP:
+        return XREF_MAP[key]
+    c = canon_sec(sec)
+    if not what:
+        return XREF_MAP.get(c)
+    pre = c + '|'
+    w = norm_xref('', what).strip('|')
+    m = re.match(r'^表([A-Za-z]?\d[\d.\-A-Za-z]*)\s+(.+)$', w)
+    if m:                                   # 行级目标：表题名或表号 ＋ 行名／行号（允许只写行名一部分）
+        q = squash(m.group(2))
+        for k, v in XREF_MAP.items():
+            if not (k.startswith(pre) and k[len(pre):].startswith('表%s ' % m.group(1))):
+                continue
+            tail = k[len(pre):].split(' ', 1)[1]
+            if squash(tail) == q or (q and (q in squash(tail) or squash(tail) in q)):
+                return v
+    if len(squash(w)) >= 2 and squash(w) in XREF_MAP:      # 全篇唯一的行名捷径键
+        return XREF_MAP[squash(w)]
+    for k, v in XREF_MAP.items():                          # 子标题片段匹配
+        if k.startswith(pre) and w and w in k[len(pre):]:
+            return v
+    return None
+
+
+def build_xref_index(lines):
+    """扫描底稿，为节标题／节内每张表／节内（n）段／非编号子标题预分配书签。
+
+    返回 (line_anchor, xmap)：前者把「底稿行号」映射到书签名，后者把
+    「规范化的引用键」映射到书签名。表格书签落在表首行，段落书签落在段首行。
+    """
+    line_anchor, xmap = {}, {}
+    cur = parent = None
+    tcount, hcount = {}, {}
+    prev_table = False
+    row_no, in_appendix = 0, False
+    for idx, line in enumerate(lines):
+        s = line.strip()
+        if not s:
+            prev_table = False
+            continue
+        if s.startswith('|'):
+            is_sep = bool(re.match(r'^\|[\s:\-\|]+\|$', s))
+            if not prev_table and cur:
+                tcount[cur] = tcount.get(cur, 0) + 1
+                k = tcount[cur]
+                a = '%s_T%d' % (xref_anchor(cur), k)
+                xmap.setdefault(norm_xref(cur, '表'), a)
+                xmap[norm_xref(cur, '表%d' % k)] = a
+                # 表题名寻址（稳定）：紧邻表上方的 `**表B1　…**` 也注册为键。
+                # 位置式的「表N」会因上方插入新表而整体后移，造成静默指错表，
+                # 故正式引用一律用表题名（见 R29/R27）。
+                cap = ''
+                for back in range(1, 4):
+                    if idx - back < 0:
+                        break
+                    mc = re.match(r'^\*\*(表[^\s*　]*\d[^\s*　]*)', lines[idx - back].strip())
+                    if mc:
+                        cap = mc.group(1)
+                        break
+                if cap:
+                    xmap.setdefault(norm_xref(cur, cap), a)
+                    xmap.setdefault(squash(cap), a)
+                tcount[cur + '\x00cap'] = cap
+                line_anchor[idx] = a
+                row_no = 0
+                in_appendix = canon_sec(cur).startswith('app')
+            elif prev_table and not is_sep and cur and in_appendix:
+                row_no += 1                     # 行级书签：附录原始数据表可被逐行引用
+                cells = [c.strip() for c in s.strip('|').split('|')]
+                ra = '%s_T%d_R%d' % (xref_anchor(cur), tcount[cur], row_no)
+                xmap.setdefault(norm_xref(cur, '表%d %d' % (tcount[cur], row_no)), ra)
+                # 首格若是「序」号，行名在第二格
+                name = cells[0] if cells else ''
+                if re.fullmatch(r'\d+', name or '') and len(cells) > 1:
+                    name = cells[1]
+                if name:
+                    xmap.setdefault(norm_xref(cur, '表%d %s' % (tcount[cur], name)), ra)
+                cap = tcount.get(cur + '\x00cap') or ''
+                if name and cap:
+                    xmap.setdefault(norm_xref(cur, '%s %s' % (cap, name)), ra)
+                    xmap.setdefault(norm_xref(cur, '%s %d' % (cap, row_no)), ra)
+                if name and not re.fullmatch(r'\d+', name):
+                    xmap.setdefault(squash(name), ra)
+                line_anchor[idx] = ra
+            prev_table = True
+            continue
+        prev_table = False
+        m = re.match(r'^(#{2,7})\s+(.*)$', s)
+        if m:
+            text = m.group(2).strip()
+            if len(m.group(1)) == 2:                 # 章标题：不参与编号寻址
+                cur = parent = None
+                continue
+            mapp = re.match(r'^附\s*([錄录])\s*([A-Za-z])', text)
+            if mapp:                                 # 附录：以「附录X」为节标识（繁體自动归一）
+                cur = '附录' + mapp.group(2)
+                parent = None
+                a = xref_anchor(cur)
+                xmap.setdefault(norm_xref(cur), a)
+                line_anchor[idx] = a
+                continue
+            mn = re.match(r'^(\d+(?:\.\d+)*)[\s　]*(.*)$', text)
+            if mn:
+                cur = mn.group(1)
+                if cur.count('.') == 1:
+                    parent = cur
+                a = xref_anchor(cur)
+                xmap.setdefault(norm_xref(cur), a)
+                line_anchor[idx] = a
+            elif parent:
+                hcount[parent] = hcount.get(parent, 0) + 1
+                a = '%s_H%d' % (xref_anchor(parent), hcount[parent])
+                xmap.setdefault(norm_xref(parent, text), a)
+                line_anchor[idx] = a
+            continue
+        m = re.match(r'^\*\*[（(](\d+)[）)]', s)
+        if m and cur:
+            n = m.group(1)
+            a = '%s_P%s' % (xref_anchor(cur), n)
+            xmap.setdefault(norm_xref(cur, '(%s)' % n), a)
+            line_anchor[idx] = a
+    return line_anchor, xmap
+
+
+def add_cross_ref(paragraph, token, size=None):
+    """[[§4.2.2 表]] → 上标「§4.2.2 表」，点击跳到该节内的表／行／段／节标题。
+
+    行级目标（如附录原始数据表的某一行）一律渲染为「§附录B 表1-27」——
+    序号在表内可见，既有唯一性又不会把上标撑长。
+    """
+    size = BODY_SZ if size is None else size
+    inner = token[3:-2] if token.startswith('[[§') else token
+    bits = inner.split(None, 1)
+    sec = bits[0]
+    what = bits[1].strip() if len(bits) > 1 else ''
+    anchor = resolve_xref(sec, what)
+    if not anchor:
+        XREF_MISSING.append(token)
+        r = paragraph.add_run(('§%s%s?' % (sec, (' ' + what) if what else '')))
+        set_run_font(r, size=size, bold=True)
+        r.font.superscript = True
+        r.font.color.rgb = RGBColor(0xC0, 0x00, 0x00)
+        return
+    mrow = re.match(r'^_Sec.+_T(\d+)_R(\d+)$', anchor)
+    if mrow:
+        label = '§%s 表%s-%s' % (sec, mrow.group(1), mrow.group(2))
+    else:
+        label = '§%s%s' % (sec, what if what.startswith(('（', '(')) else ((' ' + what) if what else ''))
+    XREF_LINKED[0] += 1
+    add_internal_link(paragraph, anchor, label, size=size, superscript=True, color=XREF_COLOR)
+
+
+# --------------------------------------------------------------------------
 # inline parsing: **bold**, `code`, [[cite]]
 # --------------------------------------------------------------------------
 CITE_RE = re.compile(r'\[\[([0-9,\s]+)\]\]')
+# 内部交叉引用：[[§4.2.2]] / [[§4.2.2 表]] / [[§4.2.2 （11）]] / [[§4.2 关键发现]]
+XREF_RE = re.compile(r'\[\[§[^\[\]]+\]\]')
 # 证据标记：由转换器加浅底纹高亮，便于读者与脚本同时定位（R6.1/R6.3）
 FLAG_RE = re.compile(r'【(?:推算|估算|冲突|未取得|负面发现|口径冲突)】')
-INLINE_RE = re.compile(r'(\*\*.+?\*\*|`[^`]+`|\[\[[0-9,\s]+\]\]|【(?:推算|估算|冲突|未取得|负面发现|口径冲突)】)')
+INLINE_RE = re.compile(r'(\*\*.+?\*\*|`[^`]+`|\[\[§[^\[\]]+\]\]|\[\[[0-9,\s]+\]\]|【(?:推算|估算|冲突|未取得|负面发现|口径冲突)】)')
 
 
 def add_inline(paragraph, text, size=None, base_bold=False, allow_cite=True,
@@ -263,7 +512,9 @@ def add_inline(paragraph, text, size=None, base_bold=False, allow_cite=True,
     for part in INLINE_RE.split(text):
         if not part:
             continue
-        if part.startswith('[[') and part.endswith(']]'):
+        if part.startswith('[[§') and part.endswith(']]'):
+            add_cross_ref(paragraph, part, size=size if cite_size is None else cite_size)
+        elif part.startswith('[[') and part.endswith(']]'):
             if not allow_cite:
                 continue
             nums = [x.strip() for x in part[2:-2].split(',') if x.strip()]
@@ -275,8 +526,14 @@ def add_inline(paragraph, text, size=None, base_bold=False, allow_cite=True,
             set_run_font(r, size=size, bold=True)
             shade_run(r)
         elif part.startswith('**') and part.endswith('**') and len(part) > 4:
-            r = paragraph.add_run(part[2:-2])
-            set_run_font(r, size=size, bold=True)
+            inner = part[2:-2]
+            if '[[' in inner:
+                # 粗体内嵌 [[n]]／[[§…]]：必须递归解析，否则会被整段吞成字面量
+                add_inline(paragraph, inner, size=size, base_bold=True,
+                           allow_cite=allow_cite, cite_size=cite_size)
+            else:
+                r = paragraph.add_run(inner)
+                set_run_font(r, size=size, bold=True)
         elif part.startswith('`') and part.endswith('`') and len(part) > 2:
             r = paragraph.add_run(part[1:-1])
             set_run_font(r, size=size - 0.5, bold=base_bold)
@@ -288,8 +545,8 @@ def add_inline(paragraph, text, size=None, base_bold=False, allow_cite=True,
 # --------------------------------------------------------------------------
 # block builders (NO Word auto-numbering anywhere)
 # --------------------------------------------------------------------------
-def add_body(doc, text, indent=True, size=None, after=None):
-    size = BODY_SZ if size is None else size
+def add_body(doc, text, indent=True, size=None, after=None, anchor=None):
+    size = appendix_sz(BODY_SZ if size is None else size)
     p = doc.add_paragraph()
     set_paragraph_spacing(p, before=BEFORE, after=AFTER if after is None else after,
                           line=appendix_line(p, LINE))
@@ -297,6 +554,8 @@ def add_body(doc, text, indent=True, size=None, after=None):
         p.alignment = WD_ALIGN_PARAGRAPH.JUSTIFY
     if indent:
         p.paragraph_format.first_line_indent = Pt(FIRST_INDENT_PT)
+    if anchor:
+        add_bookmark(p, anchor, next_xref_bid())
     add_inline(p, text, size=size)
     return p
 
@@ -304,16 +563,17 @@ def add_body(doc, text, indent=True, size=None, after=None):
 def add_list_item(doc, marker, text, level=0, size=None, hang=13):
     """以字面量 marker（如 '1.' / '•'）渲染列表项，普通段落，无自动编号。"""
     p = doc.add_paragraph()
-    set_paragraph_spacing(p, before=0, after=3, line=appendix_line(p, 1.25))
+    set_paragraph_spacing(p, before=0, after=3, line=appendix_line(p, LIST_LINE))
     p.paragraph_format.left_indent = Pt(18 + level * 18 + hang)
     p.paragraph_format.first_line_indent = Pt(-hang)
+    size = appendix_sz(BODY_SZ if size is None else size)
     r = p.add_run(marker + ' ')
     set_run_font(r, size=size)
     add_inline(p, text, size=size)
     return p
 
 
-def add_heading(doc, text, level):
+def add_heading(doc, text, level, anchor=None):
     p = doc.add_paragraph()
     sz = {1: H1_SZ, 2: H2_SZ}.get(level, H3_SZ)
     if PROFILE == "gov":            # 政府版式：全篇同字号，标题仅靠加粗区分
@@ -323,12 +583,14 @@ def add_heading(doc, text, level):
     else:
         set_paragraph_spacing(p, before={1: 16, 2: 14}.get(level, 10),
                               after={1: 8, 2: 6}.get(level, 4), line=1.2)
-    add_inline(p, text, size=sz, base_bold=True, allow_cite=False)
     set_outline_level(p, min(level, 3))
+    if anchor:
+        add_bookmark(p, anchor, next_xref_bid())
+    add_inline(p, text, size=sz, base_bold=True, allow_cite=False)
     return p
 
 
-def add_table(doc, rows):
+def add_table(doc, rows, anchor=None, row_anchors=None):
     if not rows:
         return
     ncol = max(len(r) for r in rows)
@@ -341,9 +603,16 @@ def add_table(doc, rows):
             cell.text = ''
             p = cell.paragraphs[0]
             set_paragraph_spacing(p, before=1, after=1, line=appendix_line(p, 1.05))
+            if anchor and i == 0 and j == 0:
+                # 表格不能直接挂书签，落在首格首段（§x.y 表 的跳转目标）
+                add_bookmark(p, anchor, next_xref_bid())
+            elif row_anchors and j == 0 and i in row_anchors:
+                # 行级书签（R27）：附录原始数据表可被逐行精确引用
+                add_bookmark(p, row_anchors[i], next_xref_bid())
             txt = row[j] if j < len(row) else ''
-            add_inline(p, txt.strip(), size=TABLE_SZ, base_bold=(i == 0),
-                       allow_cite=True, cite_size=TABLE_SZ - 1.5)
+            tsz = appendix_sz(TABLE_SZ)
+            add_inline(p, txt.strip(), size=tsz, base_bold=(i == 0),
+                       allow_cite=True, cite_size=max(tsz - 1.5, 8.0))
             if i == 0:
                 shade_cell(cell, "DCE6F1")
     sp = doc.add_paragraph()
@@ -501,7 +770,9 @@ def _chart_path(spec, tone):
         gap = W * SS * 0.07
         bw = (W * SS - gap * (n + 1)) / n
         for i, v in enumerate(vals):
-            hh = (H * SS - 8) * (v / mx)
+            if v <= 0:            # 0 值柱留空槽（本身即信息：该主体不选此方案）
+                continue
+            hh = max((H * SS - 8) * (v / mx), SS * 3)
             x0 = gap + i * (bw + gap)
             f = 1.0 if i == 0 else max(0.30, 0.74 - 0.13 * i)
             dr.rounded_rectangle([x0, H * SS - hh, x0 + bw, H * SS - 2],
@@ -546,10 +817,15 @@ def add_cards(doc, spec, md_path):
                base_bold=True, allow_cite=False)
     for r in hp.runs:
         r.font.color.rgb = CARD_TITLE_COLOR
-    if spec.get('subtitle'):
-        r = hp.add_run('　　' + spec['subtitle'])
-        set_run_font(r, size=CARD_LABEL_SZ, color=CARD_LABEL_COLOR)
-        r.font.bold = False
+    if spec.get('subtitle'):                # 副标题可带角标：整块卡片共同的数据来源
+        n0 = len(hp.runs)
+        add_inline(hp, '　　' + spec['subtitle'], size=CARD_LABEL_SZ, allow_cite=True,
+                   cite_size=CARD_LABEL_SZ - 1)
+        for r in hp.runs[n0:]:
+            if r.font.superscript:
+                continue
+            r.font.color.rgb = CARD_LABEL_COLOR
+            r.font.bold = False
     shade_cell(head, CARD_TITLE_FILL)
     set_cell_borders(head, sz=4)
     head.width = Cm(CW * ncol)
@@ -577,14 +853,19 @@ def add_cards(doc, spec, md_path):
         else:
             p1.add_run('【缺图：%s】' % icon)
         head_n = len(p1.runs)                  # 图形之后的 run 才需要抬升
-        add_inline(p1, num, size=CARD_NUM_SZ, base_bold=True, allow_cite=False)
+        num, _, short = num.partition('::')     # `数字::短标签`：数字后紧跟的一句话定性
+        add_inline(p1, num.strip(), size=CARD_NUM_SZ, base_bold=True, allow_cite=False)
+        if short.strip():
+            add_inline(p1, ' ' + short.strip(), size=CARD_LABEL_SZ + 1, base_bold=True,
+                       allow_cite=False)
         ncolor = CARD_TONES.get((tone or 'deep').lower(), CARD_NUM_COLOR)
         for r in p1.runs[head_n:]:             # 数字统一着色，较高的图把数字抬到中线
             r.font.color.rgb = ncolor
             if pos:
                 set_run_position(r, pos)
-        if cite:                               # 角标紧贴数值，落在数值所在格内（R10-1）
-            add_citation(p1, cite, size=CARD_LABEL_SZ - 1)
+        if cite:                               # 角标紧贴数值，落在数值所在格内（R10-1）；
+            add_inline(p1, cite, size=CARD_LABEL_SZ - 1, allow_cite=True,
+                       cite_size=CARD_LABEL_SZ - 1)   # 同时支持 [[§…]] 内部跳转（R27）
 
         p2 = cell.add_paragraph()
         set_paragraph_spacing(p2, before=0, after=4, line=1.05)
@@ -592,6 +873,8 @@ def add_cards(doc, spec, md_path):
         add_inline(p2, label, size=CARD_LABEL_SZ, allow_cite=False)
         for r in p2.runs:
             r.font.color.rgb = CARD_LABEL_COLOR
+            if r.font.bold is not True:        # 说明文字不加粗；**强调** 保留
+                r.font.bold = False
 
         shade_cell(cell, CARD_FILL)
         set_cell_borders(cell)
@@ -621,7 +904,9 @@ def parse_cards(lines, i):
     """解析 :::cards 围栏。
 
     首行  `:::cards 标题 | 副标题`
-    卡片  `图标名|数字|标签|角标|色调`   （角标形如 [[74,77]]，可留空）
+    卡片  `图标名|数字|标签|角标|色调`   （角标形如 [[74,77]]，可留空；
+          数字可写作 `数字::短标签`，短标签紧随数字、同色加粗）
+    副标题可带 [[n]]：标注整块卡片共同的数据来源，卡片内只标额外来源
     脚注  `foot|口径说明…`
     结束  `:::`
     """
@@ -651,8 +936,8 @@ def parse_cards(lines, i):
         while len(f) < 5:
             f.append('')
         icon, num, label, cite, tone = f[:5]
-        nums = re.findall(r'\d+', cite)
-        spec['cards'].append((icon, num, label, nums, tone))
+        # 角标栏保留**原始文本**：既可能是来源 [[n]]，也可能是内部跳转 [[§4.2.2 表]]（R27）
+        spec['cards'].append((icon, num, label, cite, tone))
         i += 1
     return spec, i
 
@@ -661,7 +946,7 @@ def add_quote(doc, text):
     p = doc.add_paragraph()
     set_paragraph_spacing(p, before=4, after=6, line=appendix_line(p, 1.25))
     p.paragraph_format.left_indent = Pt(16)
-    add_inline(p, text, size=BODY_SZ - 0.5)
+    add_inline(p, text, size=appendix_sz(BODY_SZ - 0.5))
     for r in p.runs:
         r.font.color.rgb = RGBColor(0x40, 0x40, 0x40)
     return p
@@ -719,10 +1004,12 @@ def _add_classification(text):
 
 
 def convert(md_path, out_path, title=None, toc=False):
-    global IN_APPENDIX
+    global IN_APPENDIX, XREF_MAP, XREF_MISSING
     IN_APPENDIX = False
     with open(md_path, 'r', encoding='utf-8') as f:
         lines = f.read().split('\n')
+    line_anchor, XREF_MAP = build_xref_index(lines)
+    XREF_MISSING = []
 
     doc = Document()
 
@@ -827,7 +1114,7 @@ def convert(md_path, out_path, title=None, toc=False):
             cp = doc.add_paragraph()
             cp.alignment = WD_ALIGN_PARAGRAPH.CENTER
             set_paragraph_spacing(cp, before=0, after=10, line=appendix_line(cp, 1.15))
-            add_inline(cp, m.group(1), size=BODY_SZ - 1.5)
+            add_inline(cp, m.group(1), size=appendix_sz(BODY_SZ - 1.5))
             for r in cp.runs:
                 r.font.color.rgb = RGBColor(0x59, 0x59, 0x59)
             i += 1
@@ -841,8 +1128,16 @@ def convert(md_path, out_path, title=None, toc=False):
             continue
 
         if stripped.startswith('|'):
+            tstart = i
             rows, i = parse_table(lines, i)
-            add_table(doc, rows)
+            ra, k = {}, 0
+            for ln in range(tstart, i):
+                s2 = lines[ln].strip()
+                if s2.startswith('|') and not re.match(r'^\|[\s:\-\|]+\|$', s2):
+                    if ln in line_anchor:
+                        ra[k] = line_anchor[ln]
+                    k += 1
+            add_table(doc, rows, anchor=line_anchor.get(tstart), row_anchors=ra)
             prev_was_ordered = False
             continue
 
@@ -852,12 +1147,13 @@ def convert(md_path, out_path, title=None, toc=False):
             text = m.group(2).strip()
             if re.match(r'^附\s*[錄录]\s*[A-Z]', text):
                 IN_APPENDIX = True      # 自「附錄A」起：正文单倍行距（R15）
+            anc = line_anchor.get(i)
             if level <= 2:
-                add_heading(doc, text, 1)
+                add_heading(doc, text, 1, anchor=anc)
             elif level == 3:
-                add_heading(doc, text, 2)
+                add_heading(doc, text, 2, anchor=anc)
             else:
-                add_heading(doc, text, 3)
+                add_heading(doc, text, 3, anchor=anc)
             prev_was_ordered = False
             i += 1
             continue
@@ -873,8 +1169,8 @@ def convert(md_path, out_path, title=None, toc=False):
             add_bookmark(p, '_Ref%s' % num, bookmark_id)
             bookmark_id += 1
             r = p.add_run('[%s] ' % num)
-            set_run_font(r, size=BODY_SZ - 0.5, bold=True)
-            add_inline(p, m.group(2), size=BODY_SZ - 0.5, allow_cite=False)
+            set_run_font(r, size=REF_SZ, bold=True)
+            add_inline(p, m.group(2), size=REF_SZ, allow_cite=False)
             prev_was_ordered = False
             i += 1
             continue
@@ -907,10 +1203,15 @@ def convert(md_path, out_path, title=None, toc=False):
             i += 1
             continue
 
-        add_body(doc, stripped)
+        add_body(doc, stripped, anchor=line_anchor.get(i))
         prev_was_ordered = False
         i += 1
 
+    if XREF_MISSING:
+        print('!! 未解析的内部交叉引用 %d 处：%s'
+              % (len(XREF_MISSING), sorted(set(XREF_MISSING))))
+    print('xref: %d links -> %d targets%s'
+          % (XREF_LINKED[0], len(XREF_MAP), '' if not XREF_MISSING else '  (含错误)'))
     doc.save(out_path)
     print("saved:", out_path)
 
