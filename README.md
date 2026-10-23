@@ -6,7 +6,7 @@
 
 > Inspired by [RhinoInsight: Improving Deep Research through Control Mechanisms for Model Behavior and Context](https://arxiv.org/abs/2511.18743)
 
-A structured research workflow skill for Claude Code, OpenCode, Codex, and DeepSeek Harness, supporting two-phase research: outline generation (extensible) and deep investigation. Human-in-the-loop design ensures precise control at every stage.
+A structured research workflow skill for Claude Code, OpenCode, Codex, and DeepSeek Harness. Two research modes — **table** (item × field outline → deep dive → report) and **deep-narrative** (angle-based subagents → primary sources saved to disk → narrative report) — plus downstream deliverables (**Word report**, **two-page slide outlines**, **research knowledge base**) and a survey toolchain (**build → backfill → analyze**). Human-in-the-loop design ensures precise control at every stage.
 
 ![Deep Research Skills Workflow](workflow.png)
 
@@ -17,6 +17,9 @@ A structured research workflow skill for Claude Code, OpenCode, Codex, and DeepS
 - **Market Research**: Competitor analysis, industry trends, product comparison
 - **Due Diligence**: Company research, investment analysis, risk assessment
 - **Data Capture, Surveys & Backfill**: Turn an Excel/Word questionnaire into a bilingual online survey with results export (`/xlsx-to-survey`); recognize handwritten/scanned paper surveys and backfill them into an online survey, then audit results pages against the questionnaire (`/survey-backfill`)
+- **Survey Analytics**: Turn online survey responses into a reproducible, updatable analysis notebook — snapshot tiers → core estimates → deep dives → LLM coding of free text — plus target-list coverage and a subject-level merged master table (`/survey-analysis-notebook`)
+- **Formal Reports & Briefings**: Render a Word report from an existing `.docx` template with preserved styles and superscript citations (`/docx-report`); turn finished research into a two-page slide outline per subject for interviews or briefings (`/research-slides`)
+- **Knowledge Base** (DSH): Before starting, check whether a subject/topic has been researched and which fields already have evidence; after finishing, write evidence-backed conclusions back and review the change history (`/research-kb`)
 
 ## Installation
 
@@ -111,7 +114,7 @@ bash scripts/install-dsh.sh zh
 ```
 
 Installs into `$DSH_HOME` (default `~/.dsh`):
-- Skills → `~/.dsh/skills/` (`research`, `research-add-items`, `research-add-fields`, `research-deep`, `research-report`, `docx-report`, `research-slides`, `survey-backfill`, `xlsx-to-survey`)
+- Skills → `~/.dsh/skills/` (`research`, `research-add-items`, `research-add-fields`, `research-deep`, `research-report`, `research-kb`, `docx-report`, `research-slides`, `survey-analysis-notebook`, `survey-backfill`, `xlsx-to-survey`)
 - Web-search subagent persona + strategy modules → `~/.dsh/agents/` (`web-search-agent.md`, `web-search-modules/`)
 
 Platform notes:
@@ -139,8 +142,12 @@ DSH watches the skill roots, so running sessions pick the skills up without a re
 | `/research-add-fields` | Add more field definitions to existing outline |
 | `/research-deep` | Deep research each item with parallel agents |
 | `/research-report` | Generate markdown report from JSON results |
+| `/research-kb` (DSH) | The read/write face of a research knowledge base: check coverage before starting, write evidence-backed conclusions back through a controlled channel, review change history and citation resolution |
+| `/docx-report` | Render a formal Chinese Word report from an existing `.docx` template: full style fidelity, clickable superscript citations, detailed bibliography |
+| `/research-slides` | Turn finished research into a two-page slide outline **per subject**: page 1 business architecture (direction / pain points / trend), page 2 technical architecture (AI-agent idea + compute tiers) |
 | `/xlsx-to-survey` | Turn an Excel/Word questionnaire into a bilingual (zh-TW/en-US) online survey: row dump, spec authoring, order-aware self-check, create, submit-verify, then results export (web page + CSV/JSON) and structure re-sync |
 | `/survey-backfill` | Backfill handwritten/scanned paper surveys into an online survey: vision transcription + multi-pass review/adjudication + platform-rule adaptation + pilot submit/read-back + results-page audit |
+| `/survey-analysis-notebook` | Turn online survey responses into a reproducible, updatable analysis notebook: paged API pull → per-subject snapshot (lower/mid/upper tiers) → core estimates → summary → deep dives → LLM coding of free text → execute & verify in the Jupyter container; extends to target-list coverage and a subject-level merged master table (bucket-upper tier, "1+4" industry tagging, human "trust" marks) |
 
 ### Two research modes
 
@@ -148,6 +155,19 @@ DSH watches the skill roots, so running sessions pick the skills up without a re
 
 - **Table mode** (default) — the item x field workflow below (`outline.yaml` + `fields.yaml` -> `/research-deep` -> `/research-report`). Best for benchmarks, technology selection, competitor comparison.
 - **Deep-narrative mode** — splits the topic into 3-5 research *angles*, gives each its own subagent, **saves every primary source to `sources/`** with a per-angle manifest, self-verifies load-bearing facts, and writes a narrative `Deep_Research_Report.md` that cites the saved files. Best for tracing an evolution, telling approaches apart, or technical due diligence on an existing system. Discipline: `skills/research-*/research/deep_narrative_playbook.md`.
+
+### From research to deliverables
+
+Both modes stop at a report; four siblings take it further (they are separate skills, usable on their own):
+
+| Skill | Takes | Produces |
+|---|---|---|
+| `/research-report` | `results/*.json` (table mode) | `report.md` with TOC |
+| `/docx-report` | report draft + a `.docx` template | formal Word report — template styles preserved, superscript citations, bibliography |
+| `/research-slides` | `results/<slug>.json` | one **two-page slide outline per subject** (business view / technical view) for interviews or briefings |
+| `/research-kb` (DSH) | a subject or topic | "have we researched this, which fields already have evidence" + controlled write-back of conclusions, with change history |
+
+Narrative mode's output (`深度调研报告.md` + `sources/`) is markdown with in-place file citations, so it can go straight into `/docx-report`.
 
 ## Workflow & Example
 
@@ -183,6 +203,22 @@ DSH watches the skill roots, so running sessions pick the skills up without a re
 💡 **What will happen**: All data → One organized report
 
 **You get**: `report.md` - A complete markdown report with table of contents, ready to read or share
+
+### Example: Deep-narrative mode
+
+```
+/research How a city's AI-compute policy evolved, and how the competing proposals differ
+```
+💡 **What will happen**: `/research` asks which mode fits → pick **B (deep-narrative)** → it splits the topic into 3–5 **angles**, gives each angle its own subagent that **saves every primary source** under `sources/` (with a per-angle manifest), re-checks the load-bearing facts, and only then writes the narrative.
+
+**You get** (paths follow the skill's language variant; shown for the zh skills):
+```
+<topic>/
+  ├── 深度调研报告.md        # narrative conclusions, citing the saved files in place
+  └── sources/<angle>/       # manifest + raw pages / snippets per angle
+```
+Then, if you need a formal deliverable: `/docx-report` (Word, template styles preserved) or
+`/research-slides` (two-page outline per subject).
 
 ## Need Help?
 

@@ -6,7 +6,7 @@
 
 > 灵感来源：[RhinoInsight: Improving Deep Research through Control Mechanisms for Model Behavior and Context](https://arxiv.org/abs/2511.18743)
 
-适用于 Claude Code、OpenCode、Codex 和 DeepSeek Harness（DSH）的结构化调研工作流技能，支持两阶段调研：outline生成（可扩展）和深度调查。人在回路设计确保每个阶段的精确控制。
+适用于 Claude Code、OpenCode、Codex 和 DeepSeek Harness（DSH）的结构化调研工作流技能。两种调研模式——**表格模式**（item × field outline → 深度调研 → 报告）与**深度叙事模式**（按角度分派子代理 → 一手资料落盘 → 叙事报告）——加上下游交付（**Word 报告**、**两页胶片提纲**、**调研知识本体**）与问卷工具链（**建卷 → 回填 → 分析**）。人在回路设计确保每个阶段的精确控制。
 
 ![Deep Research Skills 工作流](workflow.png)
 
@@ -17,6 +17,9 @@
 - **市场研究**：竞品分析、行业趋势、产品比较
 - **尽职调查**：公司研究、投资分析、风险评估
 - **问卷建卷与数据回填**：把 Excel/Word 问卷转成双语线上问卷并导出结果（`/xlsx-to-survey`）；纸质/扫描问卷识别并回填线上问卷、结果页与问卷一致性核查（`/survey-backfill`）
+- **问卷分析**：把线上问卷答卷做成可复现、可更新的分析 notebook——逐主体快照（下限/中值/上限）→ 核心估算 → 深入剖析 → 自填文本 LLM 归类；并可扩展出「目标清单 × 问卷反馈」覆盖表与主体级合并总表（`/survey-analysis-notebook`）
+- **正式报告与宣讲**：以既有 `.docx` 模板出正式 Word 报告（样式完整还原、上标引用角标、参考文献）（`/docx-report`）；把调研成果逐对象转成两页宣讲提纲（`/research-slides`）
+- **知识本体**（DSH）：立项前查「这家/这个议题查过没有、哪些字段已有证据」，收工后把带证据的结论经受控通道落进本体并回看改动史（`/research-kb`）
 
 ## 安装
 
@@ -111,7 +114,7 @@ bash scripts/install-dsh.sh zh
 ```
 
 安装到 `$DSH_HOME`（默认 `~/.dsh`）：
-- Skills → `~/.dsh/skills/`（`research`、`research-add-items`、`research-add-fields`、`research-deep`、`research-report`、`docx-report`、`research-slides`、`survey-backfill`、`xlsx-to-survey`）
+- Skills → `~/.dsh/skills/`（`research`、`research-add-items`、`research-add-fields`、`research-deep`、`research-report`、`research-kb`、`docx-report`、`research-slides`、`survey-analysis-notebook`、`survey-backfill`、`xlsx-to-survey`）
 - web-search 子代理人设 + 策略模块 → `~/.dsh/agents/`（`web-search-agent.md`、`web-search-modules/`）
 
 平台差异说明：
@@ -139,8 +142,12 @@ DSH 会监听 skill 根目录，正在运行的会话无需重启即可发现新
 | `/research-add-fields` | 向现有outline添加更多字段定义 |
 | `/research-deep` | 使用并行agents对每个item进行深度调研 |
 | `/research-report` | 从JSON结果生成markdown报告 |
+| `/research-kb`（DSH） | 调研本体的读写面：立项前查「这家/这个议题查过没有、哪些字段已有证据」，收工后把带证据的结论经受控通道落进本体，并回看改动史与引用解析状态 |
+| `/docx-report` | 以既有 Word（.docx）模板为骨架生成正式中文调研报告：完整还原模板样式，产出无自动编号、带可点击上标引用角标与详尽参考文献的 .docx |
+| `/research-slides` | 把调研成果**逐对象**转成两页沟通胶片提纲：第一页业务架构（方向-痛点-趋势），第二页技术架构（AI/Agent 构想与算力需求分层） |
 | `/xlsx-to-survey` | Excel/Word 问卷 → 双语（zh-TW/en-US）线上问卷：抽列 → 写 spec → 含题序的自检 → 建卷 → 提交验证 → 结果导出（web 报告 + CSV/JSON）→ 改题后结构同步 |
 | `/survey-backfill` | 手写/扫描纸质问卷 PDF → 线上问卷：视觉转写 + 多轮复核仲裁 + 平台校验适配 + pilot 提交回读 + 结果页一致性核查 |
+| `/survey-analysis-notebook` | 线上问卷答卷 → 可复现、可更新的分析 notebook：分页拉数 → 逐主体快照（下限/中值/上限）→ 核心估算 → 汇总 → 深入剖析 → 自填文本 LLM 归类 → 容器内执行验证并落地 Jupyter；可扩展出「目标清单 × 问卷反馈」覆盖表与主体级合并总表（桶上限口径、「1+4」产业分类、人工「采信」标注） |
 
 ### 两种调研模式
 
@@ -148,6 +155,19 @@ DSH 会监听 skill 根目录，正在运行的会话无需重启即可发现新
 
 - **表格模式**（默认）—— 即下方的 item × field 流程（`outline.yaml` + `fields.yaml` -> `/research-deep` -> `/research-report`）。适合 benchmark 调研、技术选型、竞品横评。
 - **深度叙事模式** —— 把话题拆成 3~5 个研究**角度**，每角度一个子代理，**把每份一手资料落盘到 `sources/`** 并写分角度清单，对承重事实二次核验，最终产出就地引用这些源文件的叙事报告 `深度调研报告.md`。适合梳理演进脉络、辨析路线区别、对已有系统做技术尽调。纪律见 `skills/research-*/research/deep_narrative_playbook.md`。
+
+### 从调研到交付物
+
+两种模式都止于一份报告；另有四个兄弟技能接着往下做（都是独立技能，也可单独使用）：
+
+| 技能 | 吃什么 | 产出什么 |
+|---|---|---|
+| `/research-report` | `results/*.json`（表格模式） | 带目录的 `report.md` |
+| `/docx-report` | 报告初稿 + `.docx` 模板 | 正式 Word 报告（模板样式还原、上标引用角标、参考文献） |
+| `/research-slides` | `results/<slug>.json` | 每对象一份**两页胶片提纲**（业务视角／技术视角），用于走访或宣讲 |
+| `/research-kb`（DSH） | 某个主体或议题 | 「查过没有、哪些字段已有证据」＋经受控通道回写结论＋改动史 |
+
+深度叙事模式的产物（`深度调研报告.md` + `sources/`）是带就地文件引用的 markdown，可直接交给 `/docx-report` 出正式版。
 
 ## 工作流 & 示例
 
@@ -188,6 +208,22 @@ Use the research skill to build an outline for AI Agent Demo 2025
 💡 **会发生什么**：所有数据 → 一份整理好的报告
 
 **你会得到**：`report.md` - 带目录的完整Markdown报告，可直接阅读或分享
+
+### 示例：深度叙事模式
+
+```
+/research 某城市 AI 算力政策的演进，以及几种方案的路线区别
+```
+💡 **会发生什么**：`/research` 先问用哪种模式 → 选 **B（深度叙事）** → 把话题拆成 3~5 个**角度**，
+每角度一个子代理，**把每份一手资料落盘到 `sources/`**（含分角度清单），对承重事实二次核验，最后才写叙事。
+
+**你会得到**：
+```
+<topic>/
+  ├── 深度调研报告.md        # 叙事结论，就地引用已落盘的源文件
+  └── sources/<angle>/       # 每角度的清单 + 原文/片段
+```
+需要正式交付时再接：`/docx-report`（Word，模板样式还原）或 `/research-slides`（逐对象两页胶片提纲）。
 
 ## 遇到问题？
 
