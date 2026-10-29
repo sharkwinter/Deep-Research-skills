@@ -218,3 +218,25 @@ for p in d.paragraphs:
         tot += 1
         if p._element.findall(qn('w:hyperlink')): wit += 1
 print('key paragraphs cited: %d/%d' % (wit, tot))                  # 目标 100%
+
+# ★ R31 标题自检：导出标题树 + 计数性量词 / 生造词候选（人工判定，不做自动否决）
+def _ol(p):
+    pPr = p._p.pPr
+    if pPr is None:
+        return None
+    e = pPr.find(qn('w:outlineLvl'))
+    return int(e.get(qn('w:val'))) if e is not None else None
+
+_tree = [(_ol(p), p.text.strip()) for p in d.paragraphs if _ol(p) in (0, 1) and p.text.strip()]
+if _tree:
+    print('R31 标题数:', {1: sum(1 for lv, _ in _tree if lv == 0),
+                       2: sum(1 for lv, _ in _tree if lv == 1)})
+    _cnt = re.compile(r'[一二三四五六七八九十百千万亿两]+\s*(个|条|类|项|种|维|方面|步)')
+    _coin = ['准入门', '决策门', '不含项', '硬约束', '双闭环', '可运营数据集',
+             '落地', '兜底', '闸门', '自欺', '塌方']
+    print('R31 计数性量词候选:', [t for _, t in _tree
+                                  if _cnt.search(re.sub(r'^[0-9A-Z]+(\.[0-9]+)?[ 　]?', '', t))])
+    print('R31 生造词候选:', [t for _, t in _tree if any(w in t for w in _coin)])
+    print('R31 标题清单（逐条只看标题能否说出"讲什么"）:')
+    for lv, t in _tree:
+        print('   ' + '    ' * lv + t)
