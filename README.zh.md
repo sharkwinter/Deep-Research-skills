@@ -1,10 +1,6 @@
 # Deep Research Skill for Claude Code / OpenCode / Codex / DeepSeek Harness
 
-[English](README.md) | [中文](README.zh.md)
-
-> 如果喜欢就请 star 一下吧！:star:
-
-> 灵感来源：[RhinoInsight: Improving Deep Research through Control Mechanisms for Model Behavior and Context](https://arxiv.org/abs/2511.18743)
+[English](https://github.com/sharkwinter/Deep-Research-skills/blob/feat/deep-narrative-mode/README.md) | [中文](https://github.com/sharkwinter/Deep-Research-skills/blob/feat/deep-narrative-mode/README.zh.md)
 
 适用于 Claude Code、OpenCode、Codex 和 DeepSeek Harness（DSH）的结构化调研工作流技能。两种调研模式——**表格模式**（item × field outline → 深度调研 → 报告）与**深度叙事模式**（按角度分派子代理 → 一手资料落盘 → 叙事报告）——加上下游交付（**Word 报告**、**两页胶片提纲**、**调研知识本体**）与问卷工具链（**建卷 → 回填 → 分析**）。人在回路设计确保每个阶段的精确控制。
 

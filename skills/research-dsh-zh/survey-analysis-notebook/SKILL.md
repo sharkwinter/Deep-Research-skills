@@ -462,6 +462,16 @@ docker exec <container> bash -lc 'cd /home/jovyan/work && jupyter nbconvert \
     `key_numbers.json` 现算（`detail` 四档 → 百分比），并加一条「其他档非空才出现」的条件句。
     交付前统一 grep 一遍 `83.3%`／`45 / 54`／`3.8%` 这类字面量，确认只剩历史记录里该保留的。
 
+29. **别用 openpyxl 整本读写「已经是成品」的 xlsx**：本项目那张 211×99 的总表里已有 8 张图表、8 个枢纽表、
+    `calcChain` 与逐格样式；openpyxl 载入再存盘后 `xl/charts/*` **全部消失**、枢纽被重写、`sharedStrings` 变内联，
+    打开时 Excel 会要求修复。正确做法是**就地改 sheet XML**（只动需要的部件，其余按原字节复制）：
+    ① `<dimension ref>`；② `<pane xSplit/topLeftCell>`（冻结列 +1）；③ `<cols>`（区间 min/max ≥ 插入位则 +1，
+    新列沿用左邻宽度，保持递增不重叠）；④ 逐 `<row>` 重排单元格（列 ≥ 插入位的 `r` 右移，插入位补新 `<c>`，
+    并重算 `spans`）；⑤ `<f>` 公式文本与 `t="shared"` 的 `ref` 范围；⑥ `<autoFilter ref>`；⑦
+    `xl/pivotCache/pivotCacheDefinition*.xml` 的 `<worksheetSource ref>`；⑧ `sharedStrings` 追加新串并同步
+    `count/uniqueCount`（**注意 `<v>` 要写各自的索引**，全写同一个索引会让整列都显示成表头文字）。
+    验收：与改动前逐格比数值/公式/样式/列宽/行高应为 0 差异，且 zip 部件清单只多不少、图表部件仍在。
+
 ---
 
 ## 调研发起方给的「目标清单」× 问卷反馈（覆盖面交付）
@@ -506,6 +516,18 @@ docker exec <container> bash -lc 'cd /home/jovyan/work && jupyter nbconvert \
 6. **发现旧版匹配错误就当场订正并写进说明页**（本项目：mFood 归属、南芯省市用字、种远集团与制造厂、
    新版清单新增 HKBN JOS）——表内自洽优先，同时在 README 注明"哪些上游产物（notebook 1.9／清单导出／速览）
    尚未回流、重出时数字会怎么变"。
+7. **外部权威名单要「落盘 + 逐行标记」，不要只写结论**：用户常要求把官方名单（本项目：经科局《科技企业认证计划》
+   57 家，重点 8／成长型 1／潜力型 48）并进总表当一列。三件事缺一不可——① 名单先独立落盘（CSV/JSON/XLSX +
+   原始 HTML 存档），带证书编号、有效期、地址/网站、**曾用名**、详情页 URL，"标记"才有据可查；② 名称匹配用
+   「NFKC → 繁转简 → 去标点空格 → 去公司后缀（股份有限公司/一人有限公司/有限公司…）→ 括号内剥离」四段键，
+   **先精确、后别名白名单**，并打印每个主体是怎么命中的（本项目 57/57 全部走精确键，74 行）；③ 列插在
+   「类别」「1+4」之后（第 9 列）而不是追加到末尾——分类属性要挨着分类列，但**必须把右侧所有副作用一起修**（见坑 #29）。
+   另外明确"空白＝不在名单内"，并在说明页写清"按指示不看有效期"（本项目 57 家里 11 家证书已届满，仍照级别标注；
+   若正文要讲"现时仍有效"应另注 46 家）；④ 第二批、第三批外部列进来时，**同一个插列脚本要能换 `--at/--header/--value-col` 复用**
+   （本项目先加「經科局認證企業」到第 9 列，后加「四大產業分類」又插到第 9 列——后者把前者顶到第 10 列，两列次序按用户指定）；
+   ⑤ 新分类列落表后**立刻与表里已有的分类列做一次交叉表**，把不一致的挑出来告诉用户（本项目 70 行里 8 家两套口径打架：
+   石基／澳觅／微检／宣力＝行业口径 vs 高新技術、新大陆万博＝高新技術 vs 現代金融、均安化工／志特＝高新技術 vs 非「1+4」），
+   这比事后被问"到底算哪个"要省事得多。
 
 ---
 
@@ -516,6 +538,7 @@ docker exec <container> bash -lc 'cd /home/jovyan/work && jupyter nbconvert \
 | `/root/Working/Macao/Analysis_Notebook/build_snapshot.py` | 快照生成器（含三档口径、别名并查集、区间三值解析、高校特殊作答处理） |
 | `/root/Working/Macao/Analysis_Notebook/build_notebook.py` | notebook 生成器（64 cells：核心估算／「1+4」与 TOP5 榜单／汇总／深入剖析／q3 LLM 归类／三值包线／企业＋高校轨迹／1.9 目标清单反馈） |
 | `/root/Working/Macao/Analysis_Notebook/build_merged_subject_table.py` | 主体级合并总表生成器（两卷问卷 × 目标清单；列名对齐／主体匹配／补行／双口径／「1+4」分类；容器内跑） |
+| `/root/Working/Macao/Interview_Research/Interview_Records/pcet_certified/` | 经科局《科技企业认证计划》名单抓取→落盘→与总表逐行对接→就地插列（`fetch_pcet.py` / `match_pcet.py` / `insert_column_xml.py`） |
 | `/root/Working/Macao/Analysis_Notebook/industry_1plus4.json` | 「1+4」产业体系逐条分类（依据／来源／信心），合并总表与本表说明页共用 |
 | `/root/Working/Macao/Analysis_Notebook/build_marked_xlsx.py` | 把《…_反馈标记.csv》转成带筛选/冻结窗格与「五类汇总」的 XLSX（宿主，`PYTHONPATH=.tools`） |
 | `/root/Working/Macao/Analysis_Notebook/build_summary_docx.py` | 《关键数字速览》简/繁 Word（由 `_exports/key_numbers.json` 驱动，无硬编码数字） |
